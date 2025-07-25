@@ -2,10 +2,13 @@
   "name": "tella",
   "version": "1.0.0",
   "description": "Tella is the brain that converts your intent into on-chain results",
+  "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "ts-node src/index.ts",
+    "start": "ts-node --esm src/index.ts",
     "build": "tsc",
+    "lint": "eslint src --fix",
+    "format": "prettier --write 'src/**/*.{ts,tsx,js,json,css,md}'",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -13,6 +16,12 @@
   "license": "ISC",
   "devDependencies": {
     "@types/node": "^24.1.0",
+    "@typescript-eslint/eslint-plugin": "^8.38.0",
+    "@typescript-eslint/parser": "^8.38.0",
+    "eslint": "^9.6.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.3",
+    "prettier": "^3.6.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
   }
