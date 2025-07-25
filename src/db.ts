@@ -1,6 +1,6 @@
-// Import SQLite for DB operations.
-import sqlite3 from 'sqlite3';
-import { Database } from 'sqlite3';
+// Import sqlite3 as default (for CommonJS compatibility in ESM).
+import pkg from 'sqlite3';
+const { Database } = pkg;
 
 // Create or open DB file (local mocking).
 const db = new Database('./tella.db');
