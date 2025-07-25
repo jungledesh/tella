@@ -4,3 +4,6 @@ dist/
 # Linting/Prettier caches
 .eslintcache
 .prettiercache
+
+# Database files
+*.db

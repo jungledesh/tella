@@ -1,6 +1,7 @@
 // Import Express and types for server framework.
 import express from 'express';
 import { Request, Response } from 'express';
+import './db.ts';
 
 // Create Express app instance.
 const app = express();
