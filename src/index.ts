@@ -1,7 +1,7 @@
 // Import Express and types for server framework.
 import express from 'express';
 import { Request, Response } from 'express';
-import './db.ts';
+import { insertUser, getUser } from './db.ts';
 
 // Create Express app instance.
 const app = express();
@@ -29,3 +29,15 @@ app.post('/sms', (req: Request, res: Response) => {
 app.listen(port, () => {
   console.log(`Tella server running on http://localhost:${port}`);
 });
+
+// Test DB functions on start (add this block here).
+(async () => {
+  const msg = await insertUser(
+    'test_hash',
+    true,
+    JSON.stringify({ amount: 10 })
+  );
+  console.log('Insert result:', msg); // "User info saved"
+  const user = await getUser('test_hash');
+  console.log('Test user:', user);
+})();

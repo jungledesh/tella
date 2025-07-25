@@ -17,5 +17,39 @@ db.serialize(() => {
   `);
 });
 
+// Get user by phone_hash (async promise).
+export function getUser(
+  phoneHash: string
+): Promise<{ wallet_init: number; pending_actions: string } | null> {
+  return new Promise((resolve, reject) => {
+    db.get(
+      `SELECT * FROM users WHERE phone_hash = ?`,
+      [phoneHash],
+      (err, row) => {
+        if (err) reject(err);
+        resolve(row as { wallet_init: number; pending_actions: string } | null);
+      }
+    );
+  });
+}
+
+// Insert or update user (async).
+export function insertUser(
+  phoneHash: string,
+  walletInit: boolean = false,
+  pendingActions: string = ''
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    db.run(
+      `INSERT OR REPLACE INTO users (phone_hash, wallet_init, pending_actions) VALUES (?, ?, ?)`,
+      [phoneHash, walletInit ? 1 : 0, pendingActions],
+      (err) => {
+        if (err) reject(err);
+        resolve('User info saved');
+      }
+    );
+  });
+}
+
 // Export DB for use in other files.
 export default db;
