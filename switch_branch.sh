@@ -1,6 +1,6 @@
 #!/bin/bash
 
-git checkout main
+git checkout main -f 
 git pull origin main
 git pull --rebase --autostash 
 
