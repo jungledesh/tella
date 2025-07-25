@@ -4,5 +4,5 @@ git checkout main
 git pull origin main
 git pull --rebase --autostash 
 
-git checkot -b $1
+git checkout -b $1
 git branch -D $2
