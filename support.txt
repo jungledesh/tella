@@ -2,3 +2,4 @@ grp msg to tella & receiver
 fwd to tella & receiver (same as grp msg)
 direct txt to tella w/ receiver's ph #
 fwd to tella (fwd meta-data parsing but fallback in place)
+regular msg - Sending you some love Aj, here’ 10 bucks
