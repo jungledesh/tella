@@ -3,6 +3,7 @@ import express from 'express';
 import { Request, Response } from 'express';
 import { insertUser, getUser } from './db.ts';
 import { hashPhone } from './utils.ts';
+import { parseIntent } from './parser.ts';
 
 // Create Express app instance.
 const app = express();
@@ -50,3 +51,9 @@ const msg = await insertUser(hashed, true, JSON.stringify({ amount: 10 }));
 console.log('Insert result:', msg); // "User info saved"
 const user = await getUser(hashed);
 console.log('Test user:', user);
+
+// Test spaCy parser.
+(async () => {
+  const parsed = await parseIntent('Send $10 to +123 for lunch');
+  console.log('Parsed intent:', parsed);
+})();
