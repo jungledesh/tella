@@ -10,7 +10,8 @@ export default [
     languageOptions: {
       parser: tsParser,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
-      globals: { console: 'readonly', process: 'readonly' } // Add Node globals
+      globals: { console: 'readonly', process: 'readonly', URLSearchParams: 'readonly',
+        fetch: 'readonly' }
     },
     plugins: { '@typescript-eslint': ts, prettier },
     rules: {
