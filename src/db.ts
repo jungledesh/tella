@@ -17,34 +17,89 @@ db.serialize(() => {
   `);
 });
 
-// Get user by phone_hash (async promise).
+// Get user info from phone hash
 export function getUser(
   phoneHash: string
 ): Promise<{ wallet_init: number; pending_actions: string } | null> {
   return new Promise((resolve, reject) => {
+    // Basic type + empty check
+    if (typeof phoneHash !== 'string' || phoneHash.trim() === '') {
+      return reject(
+        new Error('Invalid input: phoneHash must be a non-empty string')
+      );
+    }
+
+    // Normalize casing
+    phoneHash = phoneHash.toLowerCase();
+
+    // Length check
+    if (phoneHash.length !== 64) {
+      return reject(
+        new Error('Invalid input: phoneHash must be 64 characters long')
+      );
+    }
+
+    // Hex format check (lowercase only, since normalized above)
+    if (!/^[a-f0-9]{64}$/.test(phoneHash)) {
+      return reject(
+        new Error('Invalid input: phoneHash must be a valid SHA-256 hex string')
+      );
+    }
+
+    // Proceed with DB lookup
     db.get(
       `SELECT * FROM users WHERE phone_hash = ?`,
       [phoneHash],
       (err, row) => {
-        if (err) reject(err);
-        resolve(row as { wallet_init: number; pending_actions: string } | null);
+        if (err) return reject(err);
+        if (!row) return resolve(null);
+        resolve(row as { wallet_init: number; pending_actions: string });
       }
     );
   });
 }
 
-// Insert or update user (async).
 export function insertUser(
   phoneHash: string,
   walletInit: boolean = false,
   pendingActions: string = ''
 ): Promise<string> {
   return new Promise((resolve, reject) => {
+    // --- Validate phoneHash ---
+    if (typeof phoneHash !== 'string' || phoneHash.trim() === '') {
+      return reject(
+        new Error('Invalid input: phoneHash must be a non-empty string')
+      );
+    }
+
+    // Normalize case
+    phoneHash = phoneHash.toLowerCase();
+
+    // Length + hex check
+    if (phoneHash.length !== 64 || !/^[a-f0-9]{64}$/.test(phoneHash)) {
+      return reject(
+        new Error('Invalid input: phoneHash must be a valid SHA-256 hex string')
+      );
+    }
+
+    // --- Validate walletInit ---
+    if (typeof walletInit !== 'boolean') {
+      return reject(new Error('Invalid input: walletInit must be a boolean'));
+    }
+
+    // --- Validate pendingActions ---
+    if (typeof pendingActions !== 'string') {
+      return reject(
+        new Error('Invalid input: pendingActions must be a string')
+      );
+    }
+
+    // Proceed with DB insertion
     db.run(
       `INSERT OR REPLACE INTO users (phone_hash, wallet_init, pending_actions) VALUES (?, ?, ?)`,
       [phoneHash, walletInit ? 1 : 0, pendingActions],
       (err) => {
-        if (err) reject(err);
+        if (err) return reject(err);
         resolve('User info saved');
       }
     );
