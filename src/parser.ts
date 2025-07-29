@@ -1,6 +1,7 @@
 // Import OpenAI SDK for API calls.
 import { OpenAI } from 'openai';
 import dotenv from 'dotenv';
+import { normalizePhoneToE164 } from './utils.ts';
 
 dotenv.config();
 
@@ -30,6 +31,14 @@ Parse this SMS intent as JSON only: extract amount (number, e.g., from $10, 10 d
 export async function parseIntent(body: string): Promise<ParsedIntent> {
   // Extract original recipient (phone or name) with regex first (secure, local).
   let recipient = body.match(phoneRegex)?.[0] || ''; // Match phone.
+  if (recipient) {
+    try {
+      recipient = normalizePhoneToE164(recipient); // Normalize phone to E.164.
+    } catch (error) {
+      console.log('Error normalizing phone #: ', error);
+      recipient = ''; // Fallback to empty if invalid phone.
+    }
+  }
   if (!recipient) {
     const nameMatch = body.match(/([A-Z][a-z]+ [A-Z][a-z]+)/); // Match name like Brian Bae.
     recipient = nameMatch ? nameMatch[0] : '';

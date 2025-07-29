@@ -117,7 +117,7 @@ describe('Intent Parser', () => {
       input: 'Send $10 to +123-456-0610 for lunch',
       expected: {
         amount: 10,
-        recipient: '123-456-0610',
+        recipient: '+11234560610',
         memo: 'lunch',
         trigger: 'direct',
       },
@@ -132,7 +132,7 @@ describe('Intent Parser', () => {
       input: 'BEGIN:VCARD FN:John Doe TEL;TYPE=CELL:123-456-7890 END:VCARD',
       expected: {
         amount: 0,
-        recipient: '123-456-7890',
+        recipient: '+11234567890',
         memo: '',
         trigger: 'direct',
       },
@@ -152,7 +152,7 @@ describe('Intent Parser', () => {
       input: 'gimme 20bucks to(415)5551234 for movie 🍿',
       expected: {
         amount: 20,
-        recipient: '(415)5551234',
+        recipient: '+14155551234',
         memo: 'movie',
         trigger: 'direct',
       },
