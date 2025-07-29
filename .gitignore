@@ -7,3 +7,6 @@ dist/
 
 # Database files
 *.db
+
+# env var file
+.env
