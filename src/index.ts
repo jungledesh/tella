@@ -52,8 +52,51 @@ console.log('Insert result:', msg); // "User info saved"
 const user = await getUser(hashed);
 console.log('Test user:', user);
 
-// Test spaCy parser.
+// Simulated test cases for parseIntent using vCard-like formats.
 (async () => {
-  const parsed = await parseIntent('Send $10 to +123 for lunch');
-  console.log('Parsed intent:', parsed);
+  const tests = [
+    {
+      label: 'Full VCARD + command',
+      input: `
+        BEGIN:VCARD
+        VERSION:3.0
+        N:Doe;John;;;
+        FN:John Doe
+        TEL;TYPE=CELL:123-456-7890
+        TEL;TYPE=WORK:987-654-3210
+        EMAIL;TYPE=HOME:john.doe@example.com
+        EMAIL;TYPE=WORK:john@work.com
+        ADR;TYPE=HOME:;;123 Main St;Anytown;CA;90210;USA
+        URL:https://example.com
+        BDAY:1990-01-01
+        NOTE:Some additional notes about the contact
+        END:VCARD
+
+        send 10 dollar
+      `,
+    },
+    {
+      label: 'Command + TEL block',
+      input: `
+        Give him $10 
+        TEL;TYPE=HOME,VOICE:(111) 555-1212
+        PHOTO;ENCODING=b;TYPE=JPEG:/9j/4AAQSkZJRgABAQEASABIAAD...
+      `,
+    },
+    {
+      label: 'Short vCard-style + command',
+      input: `
+        Hey tella, transfer 10 dollars to 
+        John Doe
+        +1 (415) 555-1234
+        john.doe@example.com
+      `,
+    },
+  ];
+
+  for (const { label, input } of tests) {
+    const parsed = await parseIntent(input);
+    console.log(`\n📦 ${label}`);
+    console.log('Parsed intent:', parsed);
+  }
 })();
