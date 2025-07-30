@@ -14,13 +14,17 @@ import {
 import { Program, Idl, AnchorProvider } from '@project-serum/anchor';
 import dotenv from 'dotenv';
 import idl from '../../intent_gateway/target/idl/intent_gateway.json' with { type: 'json' };
-import { getAssociatedTokenAddress } from '@solana/spl-token';
-import { utf8 } from '@project-serum/anchor/dist/cjs/utils/bytes';
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  getAssociatedTokenAddressSync,
+  TOKEN_PROGRAM_ID,
+} from '@solana/spl-token';
+import { Buffer } from 'buffer';
 
 // Load env vars.
 dotenv.config();
 
-// Mock Tella keypair (full 64 bytes, prod uses TEE).
+// Load and validate Tella keypair from env
 let tellaKeypair: Keypair;
 try {
   const secretKey = JSON.parse(process.env.TELLA_SECRET_KEY || '[]');
@@ -32,7 +36,7 @@ try {
   tellaKeypair = Keypair.fromSecretKey(Uint8Array.from(secretKey));
 } catch (error) {
   console.error('Keypair init error:', error);
-  process.exit(1); // Exit if keypair fails (critical for TX).
+  process.exit(1); // Critical failure
 }
 
 const mockWallet = {
@@ -52,6 +56,26 @@ const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
 
 // Program ID from the actual IDL
 const programId = new PublicKey('6mRsosPgBPjRgAxpvX4qZnJjchWSJmbqJYYJLM4sKRXz');
+
+// Helper to derive user PDA + ATA based on hash and mint
+function deriveUserPdaAndAta(
+  userIdHash: Uint8Array,
+  programId: PublicKey,
+  mint: PublicKey
+) {
+  const [userPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from('user'), userIdHash],
+    programId
+  );
+  const ata = getAssociatedTokenAddressSync(
+    mint,
+    userPda,
+    true, // Allows PDA as owner
+    TOKEN_PROGRAM_ID,
+    ASSOCIATED_TOKEN_PROGRAM_ID
+  );
+  return { userPda, ata };
+}
 
 // Create Express app.
 const app = express();
@@ -114,6 +138,25 @@ app.post('/sms', async (req: Request, res: Response) => {
           commitment: 'confirmed',
         }); // Create Anchor provider
         const program = new Program(idl as unknown as Idl, programId, provider); // Program instance
+        // Convert hash strings to bytes (Uint8Array)
+        const fromHashBytes = Uint8Array.from(Buffer.from(fromHash, 'hex'));
+        const toHashBytes = Uint8Array.from(Buffer.from(recipientHash, 'hex'));
+
+        const usdcMint = new PublicKey(
+          'Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr'
+        );
+        // Derive PDA + ATA for both sender and recipient
+        const { userPda: fromUserPda, ata: fromAta } = deriveUserPdaAndAta(
+          fromHashBytes,
+          programId,
+          usdcMint
+        );
+        const { userPda: toUserPda, ata: toAta } = deriveUserPdaAndAta(
+          toHashBytes,
+          programId,
+          usdcMint
+        );
+
         // Build tx
         const instruction = await program.methods
           .p2p_transfer(
@@ -123,16 +166,12 @@ app.post('/sms', async (req: Request, res: Response) => {
           )
           .accounts({
             tella_signer: tellaKeypair.publicKey,
-            from_user_account: new PublicKey(fromHash), // PDA
-            from_token_account: new PublicKey(fromHash), // Mock token account
-            to_user_account: new PublicKey(recipientHash), // PDA
-            to_token_account: new PublicKey(recipientHash), // Mock token account
-            token_mint: new PublicKey(
-              'Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr'
-            ),
-            token_program: new PublicKey(
-              'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
-            ),
+            from_user_account: fromUserPda, // PDA
+            from_token_account: fromAta, // Token account
+            to_user_account: toUserPda, // PDA
+            to_token_account: toAta, // Token account
+            token_mint: usdcMint,
+            token_program: TOKEN_PROGRAM_ID,
           })
           .instruction();
         const tx = new Transaction().add(instruction);
@@ -155,7 +194,7 @@ app.post('/sms', async (req: Request, res: Response) => {
           );
       }
     } else {
-      // Invalid intent
+      // Fallback for Invalid intent
       res
         .status(200)
         .send('<Response><Message>Invalid intent</Message></Response>');
