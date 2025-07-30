@@ -9,11 +9,13 @@ import {
   Keypair,
   PublicKey,
   Transaction,
-  SystemProgram,
   sendAndConfirmTransaction,
 } from '@solana/web3.js';
 import { Program, Idl, AnchorProvider } from '@project-serum/anchor';
 import dotenv from 'dotenv';
+import idl from '../../intent_gateway/target/idl/intent_gateway.json' with { type: 'json' };
+import { getAssociatedTokenAddress } from '@solana/spl-token';
+import { utf8 } from '@project-serum/anchor/dist/cjs/utils/bytes';
 
 // Load env vars.
 dotenv.config();
@@ -23,7 +25,9 @@ let tellaKeypair: Keypair;
 try {
   const secretKey = JSON.parse(process.env.TELLA_SECRET_KEY || '[]');
   if (!Array.isArray(secretKey) || secretKey.length !== 64) {
-    throw new Error('Invalid TELLA_SECRET_KEY: must be 64-byte array');
+    throw new Error(
+      `Invalid TELLA_SECRET_KEY: expected 64-byte array, got ${secretKey.length}`
+    );
   }
   tellaKeypair = Keypair.fromSecretKey(Uint8Array.from(secretKey));
 } catch (error) {
@@ -46,29 +50,8 @@ const mockWallet = {
 // Solana connection (devnet for MVP).
 const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
 
-// Mock program ID (replace with your intent_gateway program)
+// Program ID from the actual IDL
 const programId = new PublicKey('6mRsosPgBPjRgAxpvX4qZnJjchWSJmbqJYYJLM4sKRXz');
-
-// Mock IDL for intent_gateway (replace with real IDL).
-const idl: Idl = {
-  version: '0.1.0',
-  name: 'intent_gateway',
-  instructions: [
-    {
-      name: 'p2p_transfer',
-      accounts: [
-        { name: 'sender', isMut: true, isSigner: true },
-        { name: 'recipient', isMut: true, isSigner: false },
-        { name: 'systemProgram', isMut: false, isSigner: false },
-      ],
-      args: [
-        { name: 'amount', type: 'u64' },
-        { name: 'memo', type: 'string' },
-      ],
-    },
-  ],
-  accounts: [],
-};
 
 // Create Express app.
 const app = express();
@@ -86,6 +69,7 @@ app.get('/', (_: Request, res: Response) => {
 
 // POST route for SMS webhook.
 app.post('/sms', async (req: Request, res: Response) => {
+  // Hashing phone #
   const from = req.body.From || 'unknown';
   const body = req.body.Body || '';
   let fromHash: string;
@@ -99,11 +83,13 @@ app.post('/sms', async (req: Request, res: Response) => {
     return;
   }
 
+  // Parsing intent
   try {
     const parsed = await parseIntent(body);
     const recipientHash = parsed.recipient ? hashPhone(parsed.recipient) : '';
 
     if (parsed.trigger === 'direct') {
+      // Store pending action
       await insertUser(
         fromHash,
         false,
@@ -120,30 +106,36 @@ app.post('/sms', async (req: Request, res: Response) => {
           `<Response><Message>Confirm sending $${parsed.amount} to ${parsed.recipient}?</Message></Response>`
         );
     } else if (parsed.trigger === 'confirmation') {
+      // Execute transaction
       const user = await getUser(fromHash);
       if (user?.pending_actions) {
-        const pending = JSON.parse(user.pending_actions);
         // Build Solana TX for p2p_transfer.
         const provider = new AnchorProvider(connection, mockWallet, {
           commitment: 'confirmed',
         }); // Create Anchor provider
-        const program = new Program(idl, programId, provider); // Program instance
+        const program = new Program(idl as unknown as Idl, programId, provider); // Program instance
         // Build tx
-        const tx = new Transaction().add(
-          program.methods.p2p_transfer(
-            {
-              amount: parsed.amount * 1_000_000, // USDC lamports (mock).
-              memo: pending.memo || '',
-            },
-            {
-              accounts: {
-                sender: tellaKeypair.publicKey,
-                recipient: new PublicKey(recipientHash), // Mock recipient PDA.
-                systemProgram: SystemProgram.programId,
-              },
-            }
+        const instruction = await program.methods
+          .p2p_transfer(
+            fromHash, // from_user_id_hash
+            recipientHash, // to_user_id_hash
+            parsed.amount * 1_000_000 // amount in lamports
           )
-        );
+          .accounts({
+            tella_signer: tellaKeypair.publicKey,
+            from_user_account: new PublicKey(fromHash), // PDA
+            from_token_account: new PublicKey(fromHash), // Mock token account
+            to_user_account: new PublicKey(recipientHash), // PDA
+            to_token_account: new PublicKey(recipientHash), // Mock token account
+            token_mint: new PublicKey(
+              'Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr'
+            ),
+            token_program: new PublicKey(
+              'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
+            ),
+          })
+          .instruction();
+        const tx = new Transaction().add(instruction);
         tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash; // Set recent blockhash for TX validity.
         tx.feePayer = tellaKeypair.publicKey; // Set fee payer to Tella's keypair.
         // Sign and send TX with modern API.
@@ -163,6 +155,7 @@ app.post('/sms', async (req: Request, res: Response) => {
           );
       }
     } else {
+      // Invalid intent
       res
         .status(200)
         .send('<Response><Message>Invalid intent</Message></Response>');
