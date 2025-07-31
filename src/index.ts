@@ -11,6 +11,7 @@ import { Buffer } from 'buffer';
 import {
   deriveUserPdaAndAta,
   executeP2pTransfer,
+  initUserIfNeeded,
   usdcMint,
   programId,
 } from './intent_gateway.ts';
@@ -53,11 +54,28 @@ app.post('/sms', async (req: Request, res: Response) => {
     const parsed = await parseIntent(body);
     const recipientHash = parsed.recipient ? hashPhone(parsed.recipient) : '';
 
+    // Compute byte hashes for PDAs/init
+    const fromHashBytes = Uint8Array.from(Buffer.from(fromHash, 'hex'));
+
+    // Derive PDAs/ATAs early for potential background init
+    const { userPda: fromUserPda, ata: fromAta } = deriveUserPdaAndAta(
+      fromHashBytes,
+      programId,
+      usdcMint
+    );
+
     if (parsed.trigger === 'direct') {
+      // Check sender init from DB
+      let senderInitialized = false;
+      const existingSender = await getUser(fromHash);
+      if (existingSender) {
+        senderInitialized = existingSender.wallet_init === 1;
+      }
+
       // Store pending action
       await insertUser(
         fromHash,
-        false,
+        senderInitialized,
         JSON.stringify({
           amount: parsed.amount,
           recipientHash,
@@ -65,11 +83,31 @@ app.post('/sms', async (req: Request, res: Response) => {
           expires: Date.now() + 5 * 60 * 1000,
         })
       );
+
+      // Insert recipient if not exists (init false, no pending)
+      const existingRecipient = await getUser(recipientHash);
+      if (!existingRecipient) {
+        await insertUser(recipientHash, false);
+      }
+
       res
         .status(200)
         .send(
           `<Response><Message>Confirm sending $${parsed.amount} to ${parsed.recipient}?</Message></Response>`
         );
+
+      // Background: Init sender if needed (async, after response)
+      if (!senderInitialized) {
+        initUserIfNeeded(fromHash, fromHashBytes, fromUserPda, fromAta).catch(
+          (error) => {
+            console.error(
+              `Background init error for sender ${fromHash}:`,
+              error
+            );
+            // Optional: Add retry logic or alert here if needed
+          }
+        );
+      }
     } else if (parsed.trigger === 'confirmation') {
       // Execute transaction
       const user = await getUser(fromHash);
@@ -81,20 +119,26 @@ app.post('/sms', async (req: Request, res: Response) => {
         const amount = pending.amount; // number
 
         // Convert hash strings to bytes (Uint8Array)
-        const fromHashBytes = Uint8Array.from(Buffer.from(fromHash, 'hex'));
         const toHashBytes = Uint8Array.from(Buffer.from(recipientHash, 'hex'));
 
-        // Derive PDA + ATA for both sender and recipient
-        const { userPda: fromUserPda, ata: fromAta } = deriveUserPdaAndAta(
-          fromHashBytes,
-          programId,
-          usdcMint
-        );
+        // Derive PDA + ATA
         const { userPda: toUserPda, ata: toAta } = deriveUserPdaAndAta(
           toHashBytes,
           programId,
           usdcMint
         );
+
+        // Fallback: Check and init sender if not (though background should have handled)
+        const senderUser = await getUser(fromHash);
+        if (!senderUser || senderUser.wallet_init !== 1) {
+          await initUserIfNeeded(fromHash, fromHashBytes, fromUserPda, fromAta);
+        }
+
+        // Check and init user accs if needed
+        const recipientUser = await getUser(recipientHash);
+        if (!recipientUser || recipientUser.wallet_init !== 1) {
+          await initUserIfNeeded(recipientHash, toHashBytes, toUserPda, toAta);
+        }
 
         // Build and send transfer TX
         const signature = await executeP2pTransfer(

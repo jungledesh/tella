@@ -1,8 +1,12 @@
 // src/intent_gateway.ts
+import { readFileSync } from 'fs';
+import os from 'os';
+import path from 'path';
 import {
   Connection,
   Keypair,
   PublicKey,
+  SystemProgram,
   Transaction,
   VersionedTransaction,
   sendAndConfirmTransaction,
@@ -18,24 +22,16 @@ import {
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
 import { Buffer } from 'buffer';
+import { getUser, updateUser } from './db.ts';
 
 // Load env vars.
 dotenv.config();
 
-// Load and validate Tella keypair from env
-let tellaKeypair: Keypair;
-try {
-  const secretKey = JSON.parse(process.env.TELLA_SECRET_KEY || '[]');
-  if (!Array.isArray(secretKey) || secretKey.length !== 64) {
-    throw new Error(
-      `Invalid TELLA_SECRET_KEY: expected 64-byte array, got ${secretKey.length}`
-    );
-  }
-  tellaKeypair = Keypair.fromSecretKey(Uint8Array.from(secretKey));
-} catch (error) {
-  console.error('Keypair init error:', error);
-  process.exit(1); // Critical failure
-}
+const keypairPath = path.join(os.homedir(), '.config', 'solana', 'id.json');
+const secretKey = JSON.parse(readFileSync(keypairPath, 'utf-8')); // Array of 64 bytes
+const tellaKeypair = Keypair.fromSecretKey(Uint8Array.from(secretKey));
+
+console.log('Loaded local wallet:', tellaKeypair.publicKey.toBase58());
 
 const mockWallet = {
   publicKey: tellaKeypair.publicKey,
@@ -75,6 +71,14 @@ export const usdcMint = new PublicKey(
   'Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr'
 );
 
+// Create Anchor provider
+const provider = new AnchorProvider(connection, mockWallet, {
+  commitment: 'confirmed',
+});
+
+// Program instance
+const program = new Program(idl as unknown as Idl, provider);
+
 // Helper to derive user PDA + ATA based on hash and mint
 export function deriveUserPdaAndAta(
   userIdHash: Uint8Array,
@@ -95,6 +99,45 @@ export function deriveUserPdaAndAta(
   return { userPda, ata };
 }
 
+export async function initUserIfNeeded(
+  userHash: string,
+  userHashBytes: Uint8Array,
+  userPda: PublicKey,
+  ata: PublicKey
+) {
+  // Get user info from db
+  const user = await getUser(userHash);
+  if (!user || user.wallet_init !== 1) {
+    const ix = await program.methods
+      .initializeUser(userHashBytes)
+      .accounts({
+        tellaSigner: tellaKeypair.publicKey,
+        userAccount: userPda,
+        userTokenAccount: ata,
+        tokenMint: usdcMint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
+
+    const tx = new Transaction().add(ix);
+    tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+    tx.feePayer = tellaKeypair.publicKey;
+
+    const signature = await sendAndConfirmTransaction(
+      connection,
+      tx,
+      [tellaKeypair],
+      { commitment: 'processed' }
+    );
+    console.log(`Initialized user ${userHash}: ${signature}`);
+
+    // Update DB post-success
+    await updateUser(userHash, { wallet_init: true });
+  }
+}
+
 // Function to execute P2P transfer
 export async function executeP2pTransfer(
   fromHashBytes: Uint8Array,
@@ -105,14 +148,6 @@ export async function executeP2pTransfer(
   toUserPda: PublicKey,
   toAta: PublicKey
 ): Promise<string> {
-  // Create Anchor provider
-  const provider = new AnchorProvider(connection, mockWallet, {
-    commitment: 'confirmed',
-  });
-
-  // Program instance
-  const program = new Program(idl as unknown as Idl, provider);
-
   // Build tx
   const instruction = await program.methods
     .p2PTransfer(
