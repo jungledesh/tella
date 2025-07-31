@@ -9,9 +9,12 @@ import {
   Keypair,
   PublicKey,
   Transaction,
+  VersionedTransaction,
   sendAndConfirmTransaction,
 } from '@solana/web3.js';
-import { Program, Idl, AnchorProvider } from '@project-serum/anchor';
+import anchor from '@coral-xyz/anchor';
+const { Program, AnchorProvider, BN } = anchor;
+import type { Idl } from '@coral-xyz/anchor';
 import dotenv from 'dotenv';
 import idl from '../../intent_gateway/target/idl/intent_gateway.json' with { type: 'json' };
 import {
@@ -41,12 +44,22 @@ try {
 
 const mockWallet = {
   publicKey: tellaKeypair.publicKey,
-  signTransaction: async (tx: Transaction) => {
-    tx.partialSign(tellaKeypair);
+  signTransaction: async <T extends Transaction | VersionedTransaction>(
+    tx: T
+  ): Promise<T> => {
+    if ('partialSign' in tx) {
+      tx.partialSign(tellaKeypair);
+    }
     return tx;
   },
-  signAllTransactions: async (txs: Transaction[]) => {
-    txs.forEach((tx) => tx.partialSign(tellaKeypair));
+  signAllTransactions: async <T extends Transaction | VersionedTransaction>(
+    txs: T[]
+  ): Promise<T[]> => {
+    txs.forEach((tx) => {
+      if ('partialSign' in tx) {
+        tx.partialSign(tellaKeypair);
+      }
+    });
     return txs;
   },
 };
@@ -133,11 +146,20 @@ app.post('/sms', async (req: Request, res: Response) => {
       // Execute transaction
       const user = await getUser(fromHash);
       if (user?.pending_actions) {
-        // Build Solana TX for p2p_transfer.
+        // Parse pending actions JSON
+        const pending = JSON.parse(user.pending_actions);
+
+        // Create Anchor provider
         const provider = new AnchorProvider(connection, mockWallet, {
           commitment: 'confirmed',
-        }); // Create Anchor provider
-        const program = new Program(idl as unknown as Idl, programId, provider); // Program instance
+        });
+
+        // Program instance
+        const program = new Program(idl as unknown as Idl, provider);
+
+        const recipientHash = pending.recipientHash;
+        const amount = pending.amount; // number
+
         // Convert hash strings to bytes (Uint8Array)
         const fromHashBytes = Uint8Array.from(Buffer.from(fromHash, 'hex'));
         const toHashBytes = Uint8Array.from(Buffer.from(recipientHash, 'hex'));
@@ -159,19 +181,19 @@ app.post('/sms', async (req: Request, res: Response) => {
 
         // Build tx
         const instruction = await program.methods
-          .p2p_transfer(
-            fromHash, // from_user_id_hash
-            recipientHash, // to_user_id_hash
-            parsed.amount * 1_000_000 // amount in lamports
+          .p2PTransfer(
+            fromHashBytes, // from_user_id_hash
+            toHashBytes, // to_user_id_hash
+            new BN(amount * 1_000_000) // amount in lamports
           )
           .accounts({
-            tella_signer: tellaKeypair.publicKey,
-            from_user_account: fromUserPda, // PDA
-            from_token_account: fromAta, // Token account
-            to_user_account: toUserPda, // PDA
-            to_token_account: toAta, // Token account
-            token_mint: usdcMint,
-            token_program: TOKEN_PROGRAM_ID,
+            tellaSigner: tellaKeypair.publicKey,
+            fromUserAccount: fromUserPda, // PDA
+            fromTokenAccount: fromAta, // Token account
+            toUserAccount: toUserPda, // PDA
+            toTokenAccount: toAta, // Token account
+            tokenMint: usdcMint,
+            tokenProgram: TOKEN_PROGRAM_ID,
           })
           .instruction();
         const tx = new Transaction().add(instruction);
@@ -212,8 +234,8 @@ app.listen(port, () => {
   console.log(`Tella server running on http://localhost:${port}`);
 });
 
-// Test DB and parser.
-(async () => {
-  const parsed = await parseIntent('Send $10 to +1 (669) 262-8341 for lunch');
-  console.log('Parsed intent:', parsed);
-})();
+// // Test DB and parser.
+// (async () => {
+//   const parsed = await parseIntent('Send $10 to +1 (669) 262-8341 for lunch');
+//   console.log('Parsed intent:', parsed);
+// })();
