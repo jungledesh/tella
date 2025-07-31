@@ -106,5 +106,69 @@ export function insertUser(
   });
 }
 
+// updateUser for partial updates (e.g., set wallet_init or pending_actions)
+export function updateUser(
+  phoneHash: string,
+  updates: { wallet_init?: boolean; pending_actions?: string | null }
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // Validate phoneHash (same as insert/get)
+    if (typeof phoneHash !== 'string' || phoneHash.trim() === '') {
+      return reject(
+        new Error('Invalid input: phoneHash must be a non-empty string')
+      );
+    }
+    phoneHash = phoneHash.toLowerCase();
+    if (phoneHash.length !== 64 || !/^[a-f0-9]{64}$/.test(phoneHash)) {
+      return reject(
+        new Error('Invalid input: phoneHash must be a valid SHA-256 hex string')
+      );
+    }
+
+    // Build dynamic SET clause
+    const setClauses: string[] = [];
+    const values: (number | string | null)[] = [];
+
+    if (updates.wallet_init !== undefined) {
+      if (typeof updates.wallet_init !== 'boolean') {
+        return reject(
+          new Error('Invalid input: wallet_init must be a boolean')
+        );
+      }
+      setClauses.push('wallet_init = ?');
+      values.push(updates.wallet_init ? 1 : 0);
+    }
+
+    if (updates.pending_actions !== undefined) {
+      if (
+        updates.pending_actions !== null &&
+        typeof updates.pending_actions !== 'string'
+      ) {
+        return reject(
+          new Error('Invalid input: pending_actions must be a string or null')
+        );
+      }
+      setClauses.push('pending_actions = ?');
+      values.push(updates.pending_actions);
+    }
+
+    if (setClauses.length === 0) {
+      return reject(new Error('No updates provided'));
+    }
+
+    // Proceed with UPDATE
+    const query = `UPDATE users SET ${setClauses.join(', ')} WHERE phone_hash = ?`;
+    values.push(phoneHash);
+
+    db.run(query, values, function (err) {
+      if (err) return reject(err);
+      if (this.changes === 0) {
+        return reject(new Error('User not found'));
+      }
+      resolve('User updated');
+    });
+  });
+}
+
 // Export DB for use in other files.
 export default db;
