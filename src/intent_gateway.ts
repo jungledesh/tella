@@ -31,8 +31,6 @@ const keypairPath = path.join(os.homedir(), '.config', 'solana', 'id.json');
 const secretKey = JSON.parse(readFileSync(keypairPath, 'utf-8')); // Array of 64 bytes
 const tellaKeypair = Keypair.fromSecretKey(Uint8Array.from(secretKey));
 
-console.log('Loaded local wallet:', tellaKeypair.publicKey.toBase58());
-
 const mockWallet = {
   publicKey: tellaKeypair.publicKey,
   signTransaction: async <T extends Transaction | VersionedTransaction>(
