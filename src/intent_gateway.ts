@@ -23,6 +23,7 @@ import {
 } from '@solana/spl-token';
 import { Buffer } from 'buffer';
 import { getUser, updateUser } from './db.ts';
+import { createMemoInstruction } from '@solana/spl-memo';
 
 // Load env vars.
 dotenv.config();
@@ -144,7 +145,8 @@ export async function executeP2pTransfer(
   fromUserPda: PublicKey,
   fromAta: PublicKey,
   toUserPda: PublicKey,
-  toAta: PublicKey
+  toAta: PublicKey,
+  memo: string
 ): Promise<string> {
   // Build tx
   const instruction = await program.methods
@@ -163,9 +165,17 @@ export async function executeP2pTransfer(
       tokenProgram: TOKEN_PROGRAM_ID,
     })
     .instruction();
+
   const tx = new Transaction().add(instruction);
+
+  // Add memo if present
+  if (memo) {
+    tx.add(createMemoInstruction(memo));
+  }
+
   tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash; // Set recent blockhash for TX validity.
   tx.feePayer = tellaKeypair.publicKey; // Set fee payer to Tella's keypair.
+
   // Sign and send TX with modern API.
   const signature = await sendAndConfirmTransaction(
     connection,
