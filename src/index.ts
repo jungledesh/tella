@@ -1,11 +1,12 @@
 // Import Express, types, DB, parser, and Solana.
 import express from 'express';
 import { Request, Response } from 'express';
-import { insertUser, getUser } from './db.ts';
+import { insertUser, getUser, updateUser } from './db.ts';
 import { parseIntent } from './parser.ts';
 import { hashPhone } from './utils.ts';
 import dotenv from 'dotenv';
 import { Buffer } from 'buffer';
+import crypto from 'crypto';
 
 // Program related logic
 import {
@@ -49,6 +50,14 @@ app.post('/sms', async (req: Request, res: Response) => {
     return;
   }
 
+  // Validate body (SMS-like length limit, prevent empty/bad)
+  if (typeof body !== 'string' || body.trim() === '' || body.length > 160) {
+    res
+      .status(200)
+      .send('<Response><Message>Invalid message</Message></Response>');
+    return;
+  }
+
   // Parsing intent
   try {
     const parsed = await parseIntent(body);
@@ -65,6 +74,16 @@ app.post('/sms', async (req: Request, res: Response) => {
     );
 
     if (parsed.trigger === 'direct') {
+      // Check for self-transfer
+      if (fromHash === recipientHash) {
+        res
+          .status(200)
+          .send(
+            '<Response><Message>Self-transfer not allowed</Message></Response>'
+          );
+        return;
+      }
+
       // Check sender init from DB
       let senderInitialized = false;
       const existingSender = await getUser(fromHash);
@@ -72,11 +91,15 @@ app.post('/sms', async (req: Request, res: Response) => {
         senderInitialized = existingSender.wallet_init === 1;
       }
 
+      // Generate unique actionID for each send request
+      const actionId = crypto.randomUUID();
+
       // Store pending action
       await insertUser(
         fromHash,
         senderInitialized,
         JSON.stringify({
+          actionId,
           amount: parsed.amount,
           recipientHash,
           memo: parsed.memo,
@@ -113,10 +136,35 @@ app.post('/sms', async (req: Request, res: Response) => {
       const user = await getUser(fromHash);
       if (user?.pending_actions) {
         // Parse pending actions JSON
-        const pending = JSON.parse(user.pending_actions);
+        let pending;
+        try {
+          pending = JSON.parse(user.pending_actions);
+        } catch {
+          res
+            .status(200)
+            .send(
+              '<Response><Message>Invalid pending action</Message></Response>'
+            );
+          return;
+        }
+
+        // Check if expired
+        if (Date.now() > pending.expires) {
+          res
+            .status(200)
+            .send(
+              '<Response><Message>Confirmation expired</Message></Response>'
+            ); // Send first for low latency
+          await updateUser(fromHash, { pending_actions: null }); // Then update DB
+          return;
+        }
+
+        // Retrieve actionID for logging
+        const actionId = pending.actionId;
 
         const recipientHash = pending.recipientHash;
         const amount = pending.amount; // number
+        const memo = pending.memo || ''; // empty string if not present
 
         // Convert hash strings to bytes (Uint8Array)
         const toHashBytes = Uint8Array.from(Buffer.from(recipientHash, 'hex'));
@@ -134,7 +182,12 @@ app.post('/sms', async (req: Request, res: Response) => {
           await initUserIfNeeded(fromHash, fromHashBytes, fromUserPda, fromAta);
         }
 
-        // Check and init user accs if needed
+        // Pre-insert recipient if not in DB (ensures row exists for flag update)
+        if (!(await getUser(recipientHash))) {
+          await insertUser(recipientHash, false);
+        }
+
+        // Check and init recipient account if needed
         const recipientUser = await getUser(recipientHash);
         if (!recipientUser || recipientUser.wallet_init !== 1) {
           await initUserIfNeeded(recipientHash, toHashBytes, toUserPda, toAta);
@@ -148,10 +201,14 @@ app.post('/sms', async (req: Request, res: Response) => {
           fromUserPda,
           fromAta,
           toUserPda,
-          toAta
+          toAta,
+          memo
         );
-        console.log(`TX sent: ${signature}`); // Log TX signature for debugging.
-        res.status(200).send('<Response><Message>Sent</Message></Response>');
+        console.log(
+          `TX sent for ${fromHash} to ${recipientHash} with action ${actionId}: ${signature}`
+        ); // Log TX signature for debugging.
+        res.status(200).send('<Response><Message>Sent</Message></Response>'); // Send first for low latency
+        await updateUser(fromHash, { pending_actions: null }); // Then update DB
       } else {
         res
           .status(200)
