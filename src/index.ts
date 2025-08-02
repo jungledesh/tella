@@ -20,6 +20,12 @@ import {
 // Load env vars.
 dotenv.config();
 
+// Constants for readability/simplicity
+const EXPIRES_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_BODY_LENGTH = 160; // SMS-like limit for validation
+const WELCOME_MSG =
+  "Hi from Tella 👋,\n\nWe're the easiest way to send money via SMS — secure 🔒 and reliable 🛡️"; //  Welcome msg
+
 // Create Express app.
 const app = express();
 
@@ -46,18 +52,21 @@ app.post('/sms', async (req: Request, res: Response) => {
     console.error('Hashing error:', error);
     res
       .status(200)
-      .send('<Response><Message>Invalid phone number</Message></Response>');
+      .send('<Response><Message>Invalid phone number 🚫</Message></Response>');
     return;
   }
 
   // Validate body (SMS-like length limit, prevent empty/bad)
-  if (typeof body !== 'string' || body.trim() === '' || body.length > 160) {
+  if (
+    typeof body !== 'string' ||
+    body.trim() === '' ||
+    body.length > MAX_BODY_LENGTH
+  ) {
     res
       .status(200)
-      .send('<Response><Message>Invalid message</Message></Response>');
+      .send('<Response><Message>Invalid message 🚫</Message></Response>');
     return;
   }
-
   // Parsing intent
   try {
     const parsed = await parseIntent(body);
@@ -74,12 +83,20 @@ app.post('/sms', async (req: Request, res: Response) => {
     );
 
     if (parsed.trigger === 'direct') {
+      // Validate amount
+      if (typeof parsed.amount !== 'number' || parsed.amount <= 0) {
+        res
+          .status(200)
+          .send('<Response><Message>Invalid amount 🚫</Message></Response>');
+        return;
+      }
+
       // Check for self-transfer
       if (fromHash === recipientHash) {
         res
           .status(200)
           .send(
-            '<Response><Message>Self-transfer not allowed</Message></Response>'
+            '<Response><Message>Self-transfer not allowed 🚫</Message></Response>'
           );
         return;
       }
@@ -103,7 +120,7 @@ app.post('/sms', async (req: Request, res: Response) => {
           amount: parsed.amount,
           recipientHash,
           memo: parsed.memo,
-          expires: Date.now() + 5 * 60 * 1000,
+          expires: Date.now() + EXPIRES_MS,
         })
       );
 
@@ -113,10 +130,16 @@ app.post('/sms', async (req: Request, res: Response) => {
         await insertUser(recipientHash, false);
       }
 
+      // First-time welcome if new sender
+      const welcome = !existingSender ? `${WELCOME_MSG}\n\n` : '';
+
+      // Format memo
+      const memo = parsed.memo ? `for ${parsed.memo}` : '';
+
       res
         .status(200)
         .send(
-          `<Response><Message>Confirm sending $${parsed.amount} to ${parsed.recipient}?</Message></Response>`
+          `<Response><Message>${welcome}Confirm sending $${parsed.amount} to ${parsed.recipient} ${memo} ❓</Message></Response>`
         );
 
       // Background: Init sender if needed (async, after response)
@@ -153,7 +176,7 @@ app.post('/sms', async (req: Request, res: Response) => {
           res
             .status(200)
             .send(
-              '<Response><Message>Confirmation expired</Message></Response>'
+              '<Response><Message>Confirmation expired ⚠️</Message></Response>'
             ); // Send first for low latency
           await updateUser(fromHash, { pending_actions: null }); // Then update DB
           return;
@@ -207,26 +230,28 @@ app.post('/sms', async (req: Request, res: Response) => {
         console.log(
           `TX sent for ${fromHash} to ${recipientHash} with action ${actionId}: ${signature}`
         ); // Log TX signature for debugging.
-        res.status(200).send('<Response><Message>Sent</Message></Response>'); // Send first for low latency
+        res
+          .status(200)
+          .send('<Response><Message>Sent ✅🔒💸</Message></Response>'); // Send first for low latency
         await updateUser(fromHash, { pending_actions: null }); // Then update DB
       } else {
         res
           .status(200)
           .send(
-            '<Response><Message>No pending action found</Message></Response>'
+            '<Response><Message>No pending action found ⚠️</Message></Response>'
           );
       }
     } else {
       // Fallback for Invalid intent
       res
         .status(200)
-        .send('<Response><Message>Invalid intent</Message></Response>');
+        .send('<Response><Message>Invalid intent ⚠️</Message></Response>');
     }
   } catch (error) {
     console.error('Webhook error:', error);
     res
       .status(200)
-      .send('<Response><Message>Error parsing intent</Message></Response>');
+      .send('<Response><Message>Error parsing intent ⚠️</Message></Response>');
   }
 });
 
