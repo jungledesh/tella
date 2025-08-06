@@ -14,7 +14,6 @@ import {
 import anchor from '@coral-xyz/anchor';
 const { Program, AnchorProvider, BN } = anchor;
 import type { Idl } from '@coral-xyz/anchor';
-import dotenv from 'dotenv';
 import idl from '../../intent_gateway/target/idl/intent_gateway.json' with { type: 'json' };
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -24,9 +23,6 @@ import {
 import { Buffer } from 'buffer';
 import { getUser, updateUser } from './db.ts';
 import { createMemoInstruction } from '@solana/spl-memo';
-
-// Load env vars.
-dotenv.config();
 
 const keypairPath = path.join(os.homedir(), '.config', 'solana', 'id.json');
 const secretKey = JSON.parse(readFileSync(keypairPath, 'utf-8')); // Array of 64 bytes
@@ -104,36 +100,41 @@ export async function initUserIfNeeded(
   userPda: PublicKey,
   ata: PublicKey
 ) {
-  // Get user info from db
-  const user = await getUser(userHash);
-  if (!user || user.wallet_init !== 1) {
-    const ix = await program.methods
-      .initializeUser(userHashBytes)
-      .accounts({
-        tellaSigner: tellaKeypair.publicKey,
-        userAccount: userPda,
-        userTokenAccount: ata,
-        tokenMint: usdcMint,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-      })
-      .instruction();
+  try {
+    // Get user info from db
+    const user = await getUser(userHash);
+    if (!user || user.wallet_init !== 1) {
+      const ix = await program.methods
+        .initializeUser(userHashBytes)
+        .accounts({
+          tellaSigner: tellaKeypair.publicKey,
+          userAccount: userPda,
+          userTokenAccount: ata,
+          tokenMint: usdcMint,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .instruction();
 
-    const tx = new Transaction().add(ix);
-    tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-    tx.feePayer = tellaKeypair.publicKey;
+      const tx = new Transaction().add(ix);
+      tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+      tx.feePayer = tellaKeypair.publicKey;
 
-    const signature = await sendAndConfirmTransaction(
-      connection,
-      tx,
-      [tellaKeypair],
-      { commitment: 'processed' }
-    );
-    console.log(`Initialized user ${userHash}: ${signature}`);
+      const signature = await sendAndConfirmTransaction(
+        connection,
+        tx,
+        [tellaKeypair],
+        { commitment: 'processed' }
+      );
+      console.log(`Initialized user ${userHash}: ${signature}`);
 
-    // Update DB post-success
-    await updateUser(userHash, { wallet_init: true });
+      // Update DB post-success
+      await updateUser(userHash, { wallet_init: true });
+    }
+  } catch (err) {
+    console.error(`Init user error for ${userHash}:`, err);
+    throw new Error(`Failed to init user: ${err}`);
   }
 }
 
@@ -148,40 +149,55 @@ export async function executeP2pTransfer(
   toAta: PublicKey,
   memo: string
 ): Promise<string> {
-  // Build tx
-  const instruction = await program.methods
-    .p2PTransfer(
-      fromHashBytes, // from_user_id_hash
-      toHashBytes, // to_user_id_hash
-      new BN(amount * 1_000_000) // amount in lamports
-    )
-    .accounts({
-      tellaSigner: tellaKeypair.publicKey,
-      fromUserAccount: fromUserPda, // PDA
-      fromTokenAccount: fromAta, // Token account
-      toUserAccount: toUserPda, // PDA
-      toTokenAccount: toAta, // Token account
-      tokenMint: usdcMint,
-      tokenProgram: TOKEN_PROGRAM_ID,
-    })
-    .instruction();
+  try {
+    // Build tx
+    const instruction = await program.methods
+      .p2PTransfer(
+        fromHashBytes, // from_user_id_hash
+        toHashBytes, // to_user_id_hash
+        new BN(amount * 1_000_000) // amount in lamports
+      )
+      .accounts({
+        tellaSigner: tellaKeypair.publicKey,
+        fromUserAccount: fromUserPda, // PDA
+        fromTokenAccount: fromAta, // Token account
+        toUserAccount: toUserPda, // PDA
+        toTokenAccount: toAta, // Token account
+        tokenMint: usdcMint,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .instruction();
 
-  const tx = new Transaction().add(instruction);
+    const tx = new Transaction().add(instruction);
 
-  // Add memo if present
-  if (memo) {
-    tx.add(createMemoInstruction(memo));
+    // Add memo if present
+    if (memo) {
+      tx.add(createMemoInstruction(memo));
+    }
+
+    tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash; // Set recent blockhash for TX validity.
+    tx.feePayer = tellaKeypair.publicKey; // Set fee payer to Tella's keypair.
+
+    // Sign and send TX with modern API.
+    const signature = await sendAndConfirmTransaction(
+      connection,
+      tx,
+      [tellaKeypair],
+      { commitment: 'confirmed' }
+    );
+    return signature;
+  } catch (err) {
+    if (
+      err &&
+      typeof err === 'object' &&
+      'logs' in err &&
+      Array.isArray(err.logs) &&
+      err.logs.some((log: string) => log.includes('Insufficient funds'))
+    ) {
+      // Parse Solana error
+      throw new Error('Insufficient funds');
+    }
+    console.error('P2P transfer error:', err);
+    throw new Error(`Transfer failed: ${err}`);
   }
-
-  tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash; // Set recent blockhash for TX validity.
-  tx.feePayer = tellaKeypair.publicKey; // Set fee payer to Tella's keypair.
-
-  // Sign and send TX with modern API.
-  const signature = await sendAndConfirmTransaction(
-    connection,
-    tx,
-    [tellaKeypair],
-    { commitment: 'confirmed' }
-  );
-  return signature;
 }
