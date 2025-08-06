@@ -70,7 +70,32 @@ app.post('/sms', async (req: Request, res: Response) => {
   // Parsing intent
   try {
     const parsed = await parseIntent(body);
-    const recipientHash = parsed.recipient ? hashPhone(parsed.recipient) : '';
+    if (
+      !parsed.recipient ||
+      typeof parsed.recipient !== 'string' ||
+      parsed.recipient.trim() === ''
+    ) {
+      res
+        .status(200)
+        .send(
+          '<Response><Message>Recipient not provided ⚠️</Message></Response>'
+        );
+      return;
+    }
+
+    let recipientHash: string;
+    // Hash recipient phone
+    try {
+      recipientHash = hashPhone(parsed.recipient);
+    } catch (error) {
+      console.error('Recipient hashing error:', error);
+      res
+        .status(200)
+        .send(
+          '<Response><Message>Invalid recipient phone number 🚫</Message></Response>'
+        );
+      return;
+    }
 
     // Compute byte hashes for PDAs/init
     const fromHashBytes = Uint8Array.from(Buffer.from(fromHash, 'hex'));
@@ -131,15 +156,14 @@ app.post('/sms', async (req: Request, res: Response) => {
       }
 
       // First-time welcome if new sender
-      const welcome = !existingSender ? `${WELCOME_MSG}\n\n` : '';
+      const welcome = !senderInitialized ? `${WELCOME_MSG}\n\n` : '';
 
       // Format memo
-      const memo = parsed.memo ? `for ${parsed.memo}` : '';
-
+      const memo = parsed.memo ? ` for ${parsed.memo}` : '';
       res
         .status(200)
         .send(
-          `<Response><Message>${welcome}Confirm sending $${parsed.amount} to ${parsed.recipient} ${memo} ❓</Message></Response>`
+          `<Response><Message>${welcome}Confirm sending $${parsed.amount} to ${parsed.recipient}${memo}❓</Message></Response>`
         );
 
       // Background: Init sender if needed (async, after response)
