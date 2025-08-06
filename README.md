@@ -33,3 +33,9 @@ B txt Tella - Done
 Tella txt B - Confirm you are sending $10 to A
 B txt Tella - Yes
 Tella txt B - Sent
+
+If wallet exists for A
+Tella txt A - B sent you $10 bucks
+
+If wallet does not exist for A 
+Tella txt A - B sent you $10, accept via linking wallet to bank [ plaid link ]
