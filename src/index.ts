@@ -68,12 +68,12 @@ app.post('/sms', async (req: Request, res: Response) => {
   try {
     const parsed = await parseIntent(body);
 
-    console.log('Trigger: ', parsed.trigger);
-
     if (parsed.trigger === 'direct') {
       await handleDirectIntent(res, fromHash, parsed);
     } else if (parsed.trigger === 'confirmation') {
       await handleConfirmationIntent(res, fromHash);
+    } else if (parsed.trigger === 'cancel') {
+      await handleCancelIntent(res, fromHash);
     } else {
       return sendSmsRes(res, 'Invalid intent ⚠️');
     }
@@ -150,17 +150,17 @@ async function handleDirectIntent(
   const welcome = senderInit ? '' : `${WELCOME_MSG}\n\n`;
 
   // Send confirm
-  const memoTxt = parsed.memo ? ` for ${parsed.memo}` : '';
+  const memoTxt = parsed.memo ? `\n 📝 Memo: ${parsed.memo}` : '';
   sendSmsRes(
     res,
-    `${welcome}Confirm sending $${parsed.amount} to ${parsed.recipient}${memoTxt}❓`
+    `${welcome}💸 Amount: $${parsed.amount}\n📞 To: ${parsed.recipient}${memoTxt} \nConfirm: yes or no❓`
   );
 
   // Background init sender
   if (!senderInit) {
-    initUserIfNeeded(fromHash, fromHashBytes, fromPda, fromAta).catch((err) =>
-      console.error(`Init error ${fromHash}:`, err)
-    );
+    retry(() =>
+      initUserIfNeeded(fromHash, fromHashBytes, fromPda, fromAta)
+    ).catch((err) => console.error(`Init retry failed ${fromHash}:`, err));
   }
 }
 
@@ -243,9 +243,36 @@ async function handleConfirmationIntent(res: Response, fromHash: string) {
   await updateUser(fromHash, { pending_actions: null });
 }
 
+async function handleCancelIntent(res: Response, fromHash: string) {
+  const user = await getUser(fromHash);
+  if (user?.pending_actions) {
+    await updateUser(fromHash, { pending_actions: null });
+    sendSmsRes(res, 'Transaction cancelled ❌');
+  } else {
+    sendSmsRes(res, 'No pending to cancel ⚠️');
+  }
+}
+
 // Helper: Send XML SMS response
 function sendSmsRes(res: Response, msg: string) {
   res.status(200).send(`<Response><Message>${msg}</Message></Response>`);
+}
+
+// Add at top after imports
+async function retry<T>(
+  fn: () => Promise<T>,
+  retries: number = 3,
+  delayMs: number = 1000
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (retries <= 1) throw new Error(`Retry failed: ${err}`);
+    await new Promise<void>((resolve) =>
+      globalThis.setTimeout(resolve, delayMs)
+    );
+    return retry(fn, retries - 1, delayMs * 2);
+  }
 }
 
 // Start server.
