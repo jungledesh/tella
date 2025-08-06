@@ -12,18 +12,18 @@ export function hashPhone(phone: string): string {
 }
 
 export function normalizePhoneToE164(phone: string): string {
-  if (typeof phone !== 'string' || phone.trim() === '') {
-    throw new Error('Phone number is required');
-  }
-
   phone = phone.trim();
+
+  if (typeof phone !== 'string' || phone === '') {
+    throw new Error('Valid phone number is required');
+  }
 
   // Strip all non-digit characters
   let digits = phone.replace(/\D/g, '');
 
   // Check for empty or too short digits
   if (digits.length === 0) {
-    throw new Error('Phone number must contain digits');
+    throw new Error('Phone number must contain only digits');
   }
 
   if (digits.length < 10) {
@@ -36,7 +36,9 @@ export function normalizePhoneToE164(phone: string): string {
   } else if (digits.length === 11 && !digits.startsWith('1')) {
     throw new Error('Invalid country code. Only US numbers (+1) are supported');
   } else if (digits.length !== 11) {
-    throw new Error('Phone number must contain 10 or 11 digits');
+    throw new Error(
+      'Invalid phone number: must be 10 digits or start with +1 followed by 10 digits'
+    );
   }
 
   return `+${digits}`; // E.164 format

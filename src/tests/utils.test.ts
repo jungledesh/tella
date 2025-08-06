@@ -10,11 +10,13 @@ describe('Utils', () => {
   });
 
   test('hashPhone throws error for empty phone', () => {
-    expect(() => hashPhone('')).toThrow('Phone number is required');
+    expect(() => hashPhone('')).toThrow('Valid phone number is required');
   });
 
   test('hashPhone throws error for non-phone input', () => {
-    expect(() => hashPhone('abc')).toThrow('Phone number must contain digits');
+    expect(() => hashPhone('abc')).toThrow(
+      'Phone number must contain only digits'
+    );
   });
 
   test('hashPhone throws error for non-phone input', () => {
@@ -31,7 +33,7 @@ describe('Utils', () => {
 
   test('hashPhone throws error for 11+ digit input', () => {
     expect(() => hashPhone('0211234567890')).toThrow(
-      'Phone number must contain 10 or 11 digits'
+      'Invalid phone number: must be 10 digits or start with +1 followed by 10 digits'
     );
   });
 
