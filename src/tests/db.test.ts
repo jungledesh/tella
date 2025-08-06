@@ -63,41 +63,41 @@ describe('DB', () => {
 
   test('insertUser rejects invalid phoneHash (too short)', async () => {
     await expect(insertUser('short')).rejects.toThrow(
-      'Invalid input: phoneHash must be a valid SHA-256 hex string'
+      'Invalid phoneHash: must be 64-char hex'
     );
   });
 
   test('insertUser rejects invalid phoneHash (too long)', async () => {
     const tooLong = '0'.repeat(65);
     await expect(insertUser(tooLong)).rejects.toThrow(
-      'Invalid input: phoneHash must be a valid SHA-256 hex string'
+      'Invalid phoneHash: must be 64-char hex'
     );
   });
 
   test('insertUser rejects invalid phoneHash (invalid chars)', async () => {
     const invalidHash = 'z'.repeat(64);
     await expect(insertUser(invalidHash)).rejects.toThrow(
-      'Invalid input: phoneHash must be a valid SHA-256 hex string'
+      'Invalid phoneHash: must be 64-char hex'
     );
   });
 
   test('insertUser rejects empty phoneHash', async () => {
     await expect(insertUser('')).rejects.toThrow(
-      'Invalid input: phoneHash must be a non-empty string'
+      'Invalid phoneHash: non-empty string required'
     );
   });
 
   test('insertUser rejects non-boolean walletInit', async () => {
     // @ts-expect-error deliberate wrong type
     await expect(insertUser(dummyHash, 'true')).rejects.toThrow(
-      'Invalid input: walletInit must be a boolean'
+      'Invalid walletInit: boolean required'
     );
   });
 
   test('insertUser rejects non-string pendingActions', async () => {
     // @ts-expect-error deliberate wrong type
     await expect(insertUser(dummyHash, false, 123)).rejects.toThrow(
-      'Invalid input: pendingActions must be a string'
+      'Invalid pendingActions: string required'
     );
   });
 
@@ -133,16 +133,16 @@ describe('DB', () => {
 
   test('getUser rejects invalid phoneHash input', async () => {
     await expect(getUser('short')).rejects.toThrow(
-      'Invalid input: phoneHash must be 64 characters long'
+      'Invalid phoneHash: must be 64-char hex'
     );
 
     await expect(getUser('')).rejects.toThrow(
-      'Invalid input: phoneHash must be a non-empty string'
+      'Invalid phoneHash: non-empty string required'
     );
 
     const invalidHash = 'g'.repeat(64);
     await expect(getUser(invalidHash)).rejects.toThrow(
-      'Invalid input: phoneHash must be a valid SHA-256 hex string'
+      'Invalid phoneHash: must be 64-char hex'
     );
   });
 
@@ -197,7 +197,7 @@ describe('DB', () => {
 
   test('updateUser rejects invalid phoneHash (too short)', async () => {
     await expect(updateUser('short', { wallet_init: true })).rejects.toThrow(
-      'Invalid input: phoneHash must be a valid SHA-256 hex string'
+      'Invalid phoneHash: must be 64-char hex'
     );
   });
 
@@ -205,9 +205,7 @@ describe('DB', () => {
     const invalidHash = 'z'.repeat(64);
     await expect(
       updateUser(invalidHash, { wallet_init: true })
-    ).rejects.toThrow(
-      'Invalid input: phoneHash must be a valid SHA-256 hex string'
-    );
+    ).rejects.toThrow('Invalid phoneHash: must be 64-char hex');
   });
 
   test('updateUser normalizes uppercase hash', async () => {

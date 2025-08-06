@@ -178,7 +178,7 @@ describe('Intent Parser', () => {
 });
 
 function extractSmsIntent(content: string): string {
-  const match = content.match(/SMS Intent:\s*(.*)/i);
+  const match = content.match(/SMS:\s*(.*)/i);
   const extracted = match ? match[1] : content;
   return extracted.trim().toLowerCase();
 }
