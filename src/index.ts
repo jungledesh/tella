@@ -28,7 +28,7 @@ dotenv.config();
 const EXPIRES_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_BODY_LENGTH = 320; // SMS-like limit for validation
 const WELCOME_MSG =
-  'Hi from Tella 👋,\nThe easiest way to send money via SMS — secure 🔒 and reliable 🛡️'; //  Welcome msg
+  'Tella here 👋,\nThe easiest way to send money via SMS — secure 🔒 and reliable 🛡️'; //  Welcome msg
 
 // Create Express app.
 const app = express();
