@@ -16,6 +16,10 @@ import {
   usdcMint,
   programId,
 } from './intent_gateway.ts';
+import twilio from 'twilio';
+
+const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_TOKEN);
+const tellaNumber = process.env.TELLA_NUMBER;
 
 // Load env vars.
 dotenv.config();
@@ -69,7 +73,7 @@ app.post('/sms', async (req: Request, res: Response) => {
     const parsed = await parseIntent(body);
 
     if (parsed.trigger === 'direct') {
-      await handleDirectIntent(res, fromHash, parsed);
+      await handleDirectIntent(res, fromHash, from, parsed);
     } else if (parsed.trigger === 'confirmation') {
       await handleConfirmationIntent(res, fromHash);
     } else if (parsed.trigger === 'cancel') {
@@ -87,6 +91,7 @@ app.post('/sms', async (req: Request, res: Response) => {
 async function handleDirectIntent(
   res: Response,
   fromHash: string,
+  from: string,
   parsed: { amount: number; recipient: string; memo: string }
 ) {
   // Validate recipient
@@ -138,6 +143,8 @@ async function handleDirectIntent(
       recipientHash,
       memo: parsed.memo,
       expires: Date.now() + EXPIRES_MS,
+      senderPhone: from,
+      recipientPhone: parsed.recipient,
     })
   );
 
@@ -178,6 +185,8 @@ async function handleConfirmationIntent(res: Response, fromHash: string) {
     recipientHash: string;
     memo: string;
     expires: number;
+    senderPhone: string;
+    recipientPhone: string;
   };
   try {
     pending = JSON.parse(user.pending_actions);
@@ -186,7 +195,15 @@ async function handleConfirmationIntent(res: Response, fromHash: string) {
     return sendSmsRes(res, 'Invalid pending transfer ⚠️');
   }
 
-  const { actionID, amount, recipientHash, memo, expires } = pending;
+  const {
+    actionID,
+    amount,
+    recipientHash,
+    memo,
+    expires,
+    senderPhone,
+    recipientPhone,
+  } = pending;
 
   // Check expired
   if (Date.now() > expires) {
@@ -238,6 +255,14 @@ async function handleConfirmationIntent(res: Response, fromHash: string) {
   );
   // Update user
   sendSmsRes(res, 'Sent ✅🔒💸');
+
+  // Recipient flow
+  const memoTxt = pending.memo ? ` for ${pending.memo}` : '';
+  await client.messages.create({
+    body: `${senderPhone} sent you $${pending.amount}${memoTxt} ✅🔒`,
+    from: tellaNumber,
+    to: recipientPhone,
+  });
 
   // Clear pending
   await updateUser(fromHash, { pending_actions: null });
