@@ -125,9 +125,10 @@ export async function initUserIfNeeded(
         connection,
         tx,
         [tellaKeypair],
-        { commitment: 'processed' }
+        { commitment: 'confirmed', skipPreflight: true }
       );
       console.log(`Initialized user ${userHash}: ${signature}`);
+      console.log('Init ATA: ', ata.toBase58());
 
       // Update DB post-success
       await updateUser(userHash, { wallet_init: true });
@@ -183,7 +184,7 @@ export async function executeP2pTransfer(
       connection,
       tx,
       [tellaKeypair],
-      { commitment: 'confirmed' }
+      { commitment: 'confirmed', skipPreflight: true }
     );
     return signature;
   } catch (err) {
