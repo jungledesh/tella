@@ -1,7 +1,7 @@
 // Import Express, types, DB, parser, and Solana.
 import express from 'express';
 import { Request, Response } from 'express';
-import { insertUser, getUser, updateUser } from './db.ts';
+import { insertUser, getUser, updateUser, initDbSchema } from './db.ts';
 import { parseIntent } from './parser.ts';
 import { hashPhone } from './utils.ts';
 import dotenv from 'dotenv';
@@ -33,59 +33,76 @@ const WELCOME_MSG =
 // Create Express app.
 const app = express();
 
-// Set server port.
-const port = 3000;
-
-// Middleware to parse URL-encoded bodies.
-app.use(express.urlencoded({ extended: true }));
-
-// GET route for root.
-app.get('/', (_: Request, res: Response) => {
-  res.send('Tella server is running!');
-});
-
-// POST route for SMS webhook.
-app.post('/sms', async (req: Request, res: Response) => {
-  // Get body
-  const from = req.body.From || 'unknown';
-  const body = req.body.Body || '';
-
-  // Validate + hash sender phone
-  let fromHash: string;
+async function startServer() {
   try {
-    fromHash = hashPhone(from);
-  } catch (error) {
-    console.error('Hashing error:', error);
-    return sendSmsRes(res, 'Invalid sender phone number 🚫');
-  }
+    await initDbSchema();
+    console.log('DB schema initialized successfully.');
 
-  // Validate body (SMS-like length limit, prevent empty/bad)
-  if (
-    typeof body !== 'string' ||
-    body.trim() === '' ||
-    body.length > MAX_BODY_LENGTH
-  ) {
-    return sendSmsRes(res, 'Invalid message 🚫');
-  }
+    // Set server port.
+    const port = 3000;
 
-  // Parsing intent
-  try {
-    const parsed = await parseIntent(body);
+    // Middleware to parse URL-encoded bodies.
+    app.use(express.urlencoded({ extended: true }));
 
-    if (parsed.trigger === 'direct') {
-      await handleDirectIntent(res, fromHash, from, parsed);
-    } else if (parsed.trigger === 'confirmation') {
-      await handleConfirmationIntent(res, fromHash);
-    } else if (parsed.trigger === 'cancel') {
-      await handleCancelIntent(res, fromHash);
-    } else {
-      return sendSmsRes(res, 'Invalid intent ⚠️');
-    }
+    // GET route for root.
+    app.get('/', (_: Request, res: Response) => {
+      res.send('Tella server is running!');
+    });
+
+    // POST route for SMS webhook.
+    app.post('/sms', async (req: Request, res: Response) => {
+      // Get body
+      const from = req.body.From || 'unknown';
+      const body = req.body.Body || '';
+
+      // Validate + hash sender phone
+      let fromHash: string;
+      try {
+        fromHash = hashPhone(from);
+      } catch (error) {
+        console.error('Hashing error:', error);
+        return sendSmsRes(res, 'Invalid sender phone number 🚫');
+      }
+
+      // Validate body (SMS-like length limit, prevent empty/bad)
+      if (
+        typeof body !== 'string' ||
+        body.trim() === '' ||
+        body.length > MAX_BODY_LENGTH
+      ) {
+        return sendSmsRes(res, 'Invalid message 🚫');
+      }
+
+      // Parsing intent
+      try {
+        const parsed = await parseIntent(body);
+
+        if (parsed.trigger === 'direct') {
+          await handleDirectIntent(res, fromHash, from, parsed);
+        } else if (parsed.trigger === 'confirmation') {
+          await handleConfirmationIntent(res, fromHash);
+        } else if (parsed.trigger === 'cancel') {
+          await handleCancelIntent(res, fromHash);
+        } else {
+          return sendSmsRes(res, 'Invalid intent ⚠️');
+        }
+      } catch (err) {
+        console.error('SMS error:', err);
+        return sendSmsRes(res, 'Error parsing intent ⚠️');
+      }
+    });
+
+    // Start server.
+    app.listen(port, () => {
+      console.log(`Tella server running on http://localhost:${port}`);
+    });
   } catch (err) {
-    console.error('SMS error:', err);
-    return sendSmsRes(res, 'Error parsing intent ⚠️');
+    console.error('Failed to initialize DB schema:', err);
+    process.exit(1); // Exit app on startup failure
   }
-});
+}
+
+startServer();
 
 // Handle 'direct' send intent
 async function handleDirectIntent(
@@ -128,7 +145,7 @@ async function handleDirectIntent(
 
   // Get/check sender in DB
   const sender = await getUser(fromHash);
-  const senderInit = sender?.wallet_init === 1;
+  const senderInit = sender?.wallet_init === true;
 
   // Generate action ID
   const actionId = crypto.randomUUID();
@@ -229,13 +246,13 @@ async function handleConfirmationIntent(res: Response, fromHash: string) {
 
   // Init sender if needed, remove when you add re-tries
   const sender = await getUser(fromHash);
-  if (!sender || sender.wallet_init !== 1) {
+  if (!sender || sender.wallet_init !== true) {
     await initUserIfNeeded(fromHash, fromHashBytes, fromPda, fromAta);
   }
 
   // Init recipient if needed
   const recipient = await getUser(recipientHash);
-  if (!recipient || recipient.wallet_init !== 1) {
+  if (!recipient || recipient.wallet_init !== true) {
     await initUserIfNeeded(recipientHash, toHashBytes, toPda, toAta);
   }
 
@@ -299,8 +316,3 @@ async function retry<T>(
     return retry(fn, retries - 1, delayMs * 2);
   }
 }
-
-// Start server.
-app.listen(port, () => {
-  console.log(`Tella server running on http://localhost:${port}`);
-});

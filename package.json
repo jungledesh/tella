@@ -19,6 +19,7 @@
     "@types/express": "^5.0.3",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.1.0",
+    "@types/pg": "^8.15.5",
     "@types/sqlite3": "^3.1.11",
     "@typescript-eslint/eslint-plugin": "^8.38.0",
     "@typescript-eslint/parser": "^8.38.0",
@@ -40,6 +41,7 @@
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
     "openai": "^5.10.2",
+    "pg": "^8.16.3",
     "sqlite3": "^5.1.7",
     "twilio": "^5.8.0"
   }

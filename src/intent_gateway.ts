@@ -103,7 +103,7 @@ export async function initUserIfNeeded(
   try {
     // Get user info from db
     const user = await getUser(userHash);
-    if (!user || user.wallet_init !== 1) {
+    if (!user || user.wallet_init !== true) {
       const ix = await program.methods
         .initializeUser(userHashBytes)
         .accounts({
