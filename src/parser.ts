@@ -5,18 +5,12 @@ import { normalizePhoneToE164 } from './utils.ts';
 
 dotenv.config();
 
-let openaiClient: OpenAI | null = null;
-
-// Lazy initializer for OpenAI client
-export function getOpenAIClient() {
-  if (!openaiClient) {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new Error('OPENAI_API_KEY required');
-    }
-    openaiClient = new OpenAI({ apiKey });
-  }
-  return openaiClient;
+// Init OpenAI client.
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+if (!process.env.OPENAI_API_KEY) {
+  throw new Error('OPENAI_API_KEY required');
 }
 
 // Interface for parsed intent.
