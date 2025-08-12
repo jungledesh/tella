@@ -14,7 +14,7 @@ import {
 import anchor from '@coral-xyz/anchor';
 const { Program, AnchorProvider, BN } = anchor;
 import type { Idl } from '@coral-xyz/anchor';
-import idl from '../../intent_gateway/target/idl/intent_gateway.json' with { type: 'json' };
+import idl from './idl.json' with { type: 'json' };
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   getAssociatedTokenAddressSync,

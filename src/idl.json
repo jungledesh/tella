@@ -1,0 +1,280 @@
+{
+    "address": "6mRsosPgBPjRgAxpvX4qZnJjchWSJmbqJYYJLM4sKRXz",
+    "metadata": {
+      "name": "intent_gateway",
+      "version": "0.1.0",
+      "spec": "0.1.0",
+      "description": "Created with Anchor"
+    },
+    "instructions": [
+      {
+        "name": "dummy",
+        "discriminator": [
+          167,
+          117,
+          211,
+          79,
+          251,
+          254,
+          47,
+          135
+        ],
+        "accounts": [
+          {
+            "name": "tella_signer",
+            "signer": true
+          }
+        ],
+        "args": []
+      },
+      {
+        "name": "initialize_user",
+        "discriminator": [
+          111,
+          17,
+          185,
+          250,
+          60,
+          122,
+          38,
+          254
+        ],
+        "accounts": [
+          {
+            "name": "tella_signer",
+            "writable": true,
+            "signer": true
+          },
+          {
+            "name": "user_account",
+            "writable": true,
+            "pda": {
+              "seeds": [
+                {
+                  "kind": "const",
+                  "value": [
+                    117,
+                    115,
+                    101,
+                    114
+                  ]
+                },
+                {
+                  "kind": "arg",
+                  "path": "user_id_hash"
+                }
+              ]
+            }
+          },
+          {
+            "name": "user_token_account",
+            "writable": true
+          },
+          {
+            "name": "token_mint",
+            "address": "Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr"
+          },
+          {
+            "name": "token_program",
+            "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          },
+          {
+            "name": "associated_token_program",
+            "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+          },
+          {
+            "name": "system_program",
+            "address": "11111111111111111111111111111111"
+          }
+        ],
+        "args": [
+          {
+            "name": "user_id_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "p2p_transfer",
+        "discriminator": [
+          243,
+          12,
+          164,
+          77,
+          211,
+          197,
+          206,
+          112
+        ],
+        "accounts": [
+          {
+            "name": "tella_signer",
+            "writable": true,
+            "signer": true
+          },
+          {
+            "name": "from_user_account",
+            "docs": [
+              "The PDA authority of from_token_account"
+            ],
+            "pda": {
+              "seeds": [
+                {
+                  "kind": "const",
+                  "value": [
+                    117,
+                    115,
+                    101,
+                    114
+                  ]
+                },
+                {
+                  "kind": "arg",
+                  "path": "from_user_id_hash"
+                }
+              ]
+            }
+          },
+          {
+            "name": "from_token_account",
+            "writable": true
+          },
+          {
+            "name": "to_user_account",
+            "pda": {
+              "seeds": [
+                {
+                  "kind": "const",
+                  "value": [
+                    117,
+                    115,
+                    101,
+                    114
+                  ]
+                },
+                {
+                  "kind": "arg",
+                  "path": "to_user_id_hash"
+                }
+              ]
+            }
+          },
+          {
+            "name": "to_token_account",
+            "writable": true
+          },
+          {
+            "name": "token_mint",
+            "address": "Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr"
+          },
+          {
+            "name": "token_program",
+            "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          }
+        ],
+        "args": [
+          {
+            "name": "from_user_id_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "to_user_id_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    ],
+    "accounts": [
+      {
+        "name": "UserAccount",
+        "discriminator": [
+          211,
+          33,
+          136,
+          16,
+          186,
+          110,
+          242,
+          127
+        ]
+      }
+    ],
+    "errors": [
+      {
+        "code": 6000,
+        "name": "Unauthorized",
+        "msg": "Unauthorized caller"
+      },
+      {
+        "code": 6001,
+        "name": "AlreadyInitialized",
+        "msg": "Account already initialized"
+      },
+      {
+        "code": 6002,
+        "name": "InvalidAccountData",
+        "msg": "Invalid account data"
+      },
+      {
+        "code": 6003,
+        "name": "InvalidTokenAccount",
+        "msg": "Invalid token account (must be ATA)"
+      },
+      {
+        "code": 6004,
+        "name": "InvalidAmount",
+        "msg": "Invalid transfer amount (must be > 0)"
+      },
+      {
+        "code": 6005,
+        "name": "SelfTransferNotAllowed",
+        "msg": "Self-transfer not allowed"
+      }
+    ],
+    "types": [
+      {
+        "name": "UserAccount",
+        "type": {
+          "kind": "struct",
+          "fields": [
+            {
+              "name": "user_id_hash",
+              "type": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            },
+            {
+              "name": "bump",
+              "type": "u8"
+            },
+            {
+              "name": "is_initialized",
+              "type": "bool"
+            }
+          ]
+        }
+      }
+    ]
+  }
