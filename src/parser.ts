@@ -1,9 +1,6 @@
 // Import OpenAI SDK for API calls.
 import { OpenAI } from 'openai';
-import dotenv from 'dotenv';
 import { normalizePhoneToE164 } from './utils.ts';
-
-dotenv.config();
 
 // Init OpenAI client.
 const openai = new OpenAI({

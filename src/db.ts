@@ -1,10 +1,5 @@
 // Import pg for PostgreSQL connection pooling.
 import { Pool } from 'pg';
-import dotenv from 'dotenv';
-
-dotenv.config();
-
-console.log('DB URL:', process.env.DATABASE_URL);
 
 // Create connection pool using DATABASE_URL from env.
 const pool = new Pool({
