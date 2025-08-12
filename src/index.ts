@@ -38,7 +38,6 @@ async function loadSecrets() {
   });
   const response = await client.send(command);
   const secrets = JSON.parse(response.SecretString || '{}');
-  console.log('Logging secerts from SM: ', secrets);
   Object.assign(process.env, secrets); // Merge into env vars
 }
 
