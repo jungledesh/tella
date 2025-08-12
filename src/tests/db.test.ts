@@ -1,5 +1,5 @@
-import { Database } from 'sqlite3';
-import { getUser, insertUser, updateUser } from '../db.ts';
+import { Pool } from 'pg';
+import { getUser, insertUser, updateUser, initDbSchema } from '../db.ts';
 
 // Helper: dummy valid SHA-256 hex (64 chars)
 const dummyHash =
@@ -8,36 +8,30 @@ const dummyHash =
 const dummyHashUpper = dummyHash.toUpperCase(); // For normalization test
 
 describe('DB', () => {
-  let db: Database;
+  let testPool: Pool;
 
-  beforeEach(async () => {
-    db = new Database(':memory:');
-    await new Promise<void>((resolve) => {
-      db.serialize(() => {
-        db.run(
-          `
-          CREATE TABLE users (
-            phone_hash TEXT PRIMARY KEY,
-            wallet_init BOOLEAN DEFAULT 0,
-            pending_actions TEXT
-          )
-        `,
-          () => resolve()
-        );
-      });
+  beforeAll(async () => {
+    testPool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false },
     });
+    await initDbSchema(); // Run once for the suite
   });
 
-  afterEach(() => {
-    db.close();
+  beforeEach(async () => {
+    await testPool.query('DELETE FROM users'); // Cleanup data per test
+  });
+
+  afterAll(async () => {
+    await testPool.end(); // Close at end of suite
   });
 
   test('insertUser and getUser work correctly with valid input', async () => {
-    const pending = JSON.stringify({ amount: 10 });
+    const pendingObj = { amount: 10 };
+    const pending = JSON.stringify(pendingObj);
     await insertUser(dummyHash, true, pending);
     const user = await getUser(dummyHash);
 
-    // Note: Adjust type in db.ts to include phone_hash: string if needed
     expect(user).toEqual({
       phone_hash: dummyHash,
       wallet_init: 1,
@@ -54,9 +48,9 @@ describe('DB', () => {
   });
 
   test('insertUser handles empty pendingActions', async () => {
-    await insertUser(dummyHash, false, '');
+    await insertUser(dummyHash, false, '{}');
     const user = await getUser(dummyHash);
-    expect(user?.pending_actions).toBe('');
+    expect(user?.pending_actions).toEqual("{}");
   });
 
   // Edge / error cases for insertUser:
@@ -104,7 +98,7 @@ describe('DB', () => {
   // Special cases for insertUser:
 
   test('insertUser normalizes uppercase hash to lowercase', async () => {
-    await insertUser(dummyHashUpper, true, '');
+    await insertUser(dummyHashUpper, true, '{}');
     const userLower = await getUser(dummyHash); // Query with lower
     expect(userLower?.wallet_init).toBe(1);
 
@@ -179,7 +173,7 @@ describe('DB', () => {
     await insertUser(dummyHash, true, '{"original":1}');
     await updateUser(dummyHash, { pending_actions: null });
     const user = await getUser(dummyHash);
-    expect(user?.pending_actions).toBeNull(); // SQLite NULL
+    expect(user?.pending_actions).toBeNull();
   });
 
   test('updateUser resolves on non-existent user (noop)', async () => {

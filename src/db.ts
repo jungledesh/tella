@@ -1,20 +1,36 @@
-// Import sqlite3 as default (for CommonJS compatibility in ESM).
-import pkg from 'sqlite3';
-const { Database } = pkg;
+// Import pg for PostgreSQL connection pooling.
+import { Pool } from 'pg';
+import dotenv from 'dotenv';
 
-// Create or open DB file (local mocking)
-const db = new Database('./tella.db');
+dotenv.config();
 
-// Init users table if not exists.
-db.serialize(() => {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      phone_hash TEXT PRIMARY KEY,
-      wallet_init INTEGER DEFAULT 0,
-      pending_actions TEXT
-    )
-  `);
+console.log('DB URL:', process.env.DATABASE_URL);
+
+// Create connection pool using DATABASE_URL from env.
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }, // Disable strict SSL for dev; enable in prod with cert validation.
 });
+
+// Init users table if not exists (run once or on startup).
+export async function initDbSchema() {
+  const client = await pool.connect();
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        phone_hash TEXT PRIMARY KEY,
+        wallet_init INTEGER DEFAULT 0,
+        pending_actions TEXT
+      )
+    `);
+    console.log('Users table initialized.');
+  } catch (err) {
+    console.error('Error initializing DB schema:', err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
 
 // Helpers for validation (DRY)
 function validatePhoneHash(phoneHash: string): string {
@@ -43,94 +59,86 @@ function validatePendingActions(pendingActions: string): string {
 }
 
 // Get user
-export function getUser(
+export async function getUser(
   phoneHash: string
 ): Promise<{ wallet_init: number; pending_actions: string } | null> {
-  return new Promise((resolve, reject) => {
-    try {
-      phoneHash = validatePhoneHash(phoneHash);
-      db.get(
-        `SELECT * FROM users WHERE phone_hash = ?`,
-        [phoneHash],
-        (err, row) => {
-          if (err) return reject(err);
-          resolve(
-            (row as { wallet_init: number; pending_actions: string }) || null
-          );
-        }
-      );
-    } catch (err) {
-      reject(err);
-    }
-  });
+  try {
+    phoneHash = validatePhoneHash(phoneHash);
+    const res = await pool.query(`SELECT * FROM users WHERE phone_hash = $1`, [
+      phoneHash,
+    ]);
+    return res.rows[0] || null;
+  } catch (err) {
+    console.error('Error getting user:', err);
+    throw err;
+  }
 }
 
 // Insert/upsert user
-export function insertUser(
+export async function insertUser(
   phoneHash: string,
   walletInit: boolean = false,
   pendingActions: string = ''
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    try {
-      phoneHash = validatePhoneHash(phoneHash);
-      const initVal = validateWalletInit(walletInit);
-      pendingActions = validatePendingActions(pendingActions);
-      db.run(
-        `INSERT OR REPLACE INTO users (phone_hash, wallet_init, pending_actions) VALUES (?, ?, ?)`,
-        [phoneHash, initVal, pendingActions],
-        (err) => (err ? reject(err) : resolve('User info saved'))
-      );
-    } catch (err) {
-      reject(err);
-    }
-  });
+  try {
+    phoneHash = validatePhoneHash(phoneHash);
+    const initVal = validateWalletInit(walletInit);
+    pendingActions = validatePendingActions(pendingActions);
+    await pool.query(
+      `INSERT INTO users (phone_hash, wallet_init, pending_actions)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (phone_hash) DO UPDATE SET wallet_init = $2, pending_actions = $3`,
+      [phoneHash, initVal, pendingActions]
+    );
+    return 'User info saved';
+  } catch (err) {
+    console.error('Error inserting user:', err);
+    throw err;
+  }
 }
 
 // Update user
-export function updateUser(
+export async function updateUser(
   phoneHash: string,
   updates: { wallet_init?: boolean; pending_actions?: string | null }
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    try {
-      phoneHash = validatePhoneHash(phoneHash);
-      const setClauses: string[] = [];
-      const values: (number | string | null)[] = [];
+  try {
+    phoneHash = validatePhoneHash(phoneHash);
+    const setClauses: string[] = [];
+    const values: (number | string | null)[] = [];
+    let idx = 1;
 
-      if (updates.wallet_init !== undefined) {
-        setClauses.push('wallet_init = ?');
-        values.push(validateWalletInit(updates.wallet_init));
-      }
-
-      if (updates.pending_actions !== undefined) {
-        if (updates.pending_actions !== null) {
-          validatePendingActions(updates.pending_actions);
-        }
-        setClauses.push('pending_actions = ?');
-        values.push(updates.pending_actions);
-      }
-
-      if (!setClauses.length) {
-        return reject(new Error('No updates provided'));
-      }
-
-      const query = `UPDATE users SET ${setClauses.join(', ')} WHERE phone_hash = ?`;
-      values.push(phoneHash);
-
-      db.run(query, values, function (err) {
-        if (err) return reject(err);
-        if (this.changes === 0) return reject(new Error('User not found'));
-        resolve('Updated');
-      });
-    } catch (err) {
-      reject(err);
+    if (updates.wallet_init !== undefined) {
+      setClauses.push(`wallet_init = $${idx++}`);
+      values.push(validateWalletInit(updates.wallet_init));
     }
-  });
+
+    if (updates.pending_actions !== undefined) {
+      if (updates.pending_actions !== null) {
+        validatePendingActions(updates.pending_actions);
+      }
+      setClauses.push(`pending_actions = $${idx++}`);
+      values.push(updates.pending_actions);
+    }
+
+    if (!setClauses.length) {
+      throw new Error('No updates provided');
+    }
+
+    const query = `UPDATE users SET ${setClauses.join(', ')} WHERE phone_hash = $${idx}`;
+    values.push(phoneHash);
+
+    const res = await pool.query(query, values);
+    if (res.rowCount === 0) {
+      throw new Error('User not found');
+    }
+    return 'Updated';
+  } catch (err) {
+    console.error('Error updating user:', err);
+    throw err;
+  }
 }
 
-// Close DB on exit
-process.on('exit', () => db.close());
-
-// Export DB for use in other files.
-export default db;
+process.on('exit', async () => {
+  await pool.end();
+});
