@@ -11,7 +11,8 @@ export default [
       parser: tsParser,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
       globals: { console: 'readonly', process: 'readonly', URLSearchParams: 'readonly',
-        fetch: 'readonly', describe: 'readonly', test: 'readonly', expect: 'readonly', beforeEach: 'readonly', afterEach: 'readonly', jest: 'readonly'}
+        fetch: 'readonly', describe: 'readonly', test: 'readonly', expect: 'readonly', beforeEach: 'readonly', afterEach: 'readonly', jest: 'readonly',
+      beforeAll: 'readonly', afterAll: 'readonly'}
     },
     plugins: { '@typescript-eslint': ts, prettier },
     rules: {

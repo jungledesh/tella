@@ -134,6 +134,15 @@ export async function initUserIfNeeded(
       await updateUser(userHash, { wallet_init: true });
     }
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+
+    // Anchor-specific check for 6001 (already initialized)
+    if (msg.includes('0x1771') || msg.includes('6001')) {
+      console.log(`User ${userHash} already initialized, syncing DB...`);
+      await updateUser(userHash, { wallet_init: true });
+      return;
+    }
+
     console.error(`Init user error for ${userHash}:`, err);
     throw new Error(`Failed to init user: ${err}`);
   }
