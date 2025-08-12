@@ -18,13 +18,13 @@ import { Buffer } from 'buffer';
 import crypto from 'crypto';
 
 // Program related logic
-import {
+const {
   deriveUserPdaAndAta,
   executeP2pTransfer,
   initUserIfNeeded,
   usdcMint,
   programId,
-} from './intent_gateway.ts';
+} = await import('./intent_gateway.ts');
 import twilio from 'twilio';
 
 const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_TOKEN);
@@ -38,6 +38,7 @@ async function loadSecrets() {
   });
   const response = await client.send(command);
   const secrets = JSON.parse(response.SecretString || '{}');
+  console.log('Logging secerts from SM: ', secrets);
   Object.assign(process.env, secrets); // Merge into env vars
 }
 
