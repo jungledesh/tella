@@ -33,6 +33,7 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.864.0",
     "@coral-xyz/anchor": "^0.31.1",
     "@solana/spl-memo": "^0.2.5",
     "@solana/spl-token": "^0.4.13",

@@ -50,7 +50,7 @@ describe('DB', () => {
   test('insertUser handles empty pendingActions', async () => {
     await insertUser(dummyHash, false, '{}');
     const user = await getUser(dummyHash);
-    expect(user?.pending_actions).toEqual("{}");
+    expect(user?.pending_actions).toEqual('{}');
   });
 
   // Edge / error cases for insertUser:

@@ -1,10 +1,13 @@
 // Import Express, types, DB, parser, and Solana.
 import express from 'express';
+import {
+  SecretsManagerClient,
+  GetSecretValueCommand,
+} from '@aws-sdk/client-secrets-manager';
 import { Request, Response } from 'express';
 import { insertUser, getUser, updateUser, initDbSchema } from './db.ts';
 import { parseIntent } from './parser.ts';
 import { hashPhone } from './utils.ts';
-import dotenv from 'dotenv';
 import { Buffer } from 'buffer';
 import crypto from 'crypto';
 
@@ -21,8 +24,19 @@ import twilio from 'twilio';
 const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_TOKEN);
 const tellaNumber = process.env.TELLA_NUMBER;
 
-// Load env vars.
-dotenv.config();
+async function loadSecrets() {
+  const client = new SecretsManagerClient({ region: 'us-west-1' });
+  const command = new GetSecretValueCommand({
+    SecretId:
+      'arn:aws:secretsmanager:us-west-1:834873818995:secret:tella-secrets-G5Tmeo',
+  });
+  const response = await client.send(command);
+  const secrets = JSON.parse(response.SecretString || '{}');
+  Object.assign(process.env, secrets); // Merge into env vars
+}
+
+// Call before app setup
+await loadSecrets();
 
 // Constants for readability/simplicity
 const EXPIRES_MS = 5 * 60 * 1000; // 5 minutes
