@@ -9,8 +9,10 @@ import {
 await loadSecrets();
 
 import { Request, Response } from 'express';
-import { insertUser, getUser, updateUser, initDbSchema } from './db.ts';
-import { parseIntent } from './parser.ts';
+const { insertUser, getUser, updateUser, initDbSchema } = await import(
+  './db.ts'
+);
+const { parseIntent } = await import('./parser.ts');
 import { hashPhone } from './utils.ts';
 import { Buffer } from 'buffer';
 import crypto from 'crypto';
