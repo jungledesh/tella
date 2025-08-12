@@ -4,6 +4,10 @@ import {
   SecretsManagerClient,
   GetSecretValueCommand,
 } from '@aws-sdk/client-secrets-manager';
+
+// Call before importing to prevent .env errs
+await loadSecrets();
+
 import { Request, Response } from 'express';
 import { insertUser, getUser, updateUser, initDbSchema } from './db.ts';
 import { parseIntent } from './parser.ts';
@@ -34,9 +38,6 @@ async function loadSecrets() {
   const secrets = JSON.parse(response.SecretString || '{}');
   Object.assign(process.env, secrets); // Merge into env vars
 }
-
-// Call before app setup
-await loadSecrets();
 
 // Constants for readability/simplicity
 const EXPIRES_MS = 5 * 60 * 1000; // 5 minutes
