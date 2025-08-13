@@ -1,3 +1,6 @@
+// Mock
+process.env.OPENAI_API_KEY = 'testkey';
+
 import { parseIntent } from '../parser.ts';
 
 jest.mock('openai', () => {

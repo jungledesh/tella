@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { getUser, insertUser, updateUser, initDbSchema } from '../db.ts';
+import { loadSecrets } from '../index.ts';
 
 // Helper: dummy valid SHA-256 hex (64 chars)
 const dummyHash =
@@ -9,8 +9,25 @@ const dummyHashUpper = dummyHash.toUpperCase(); // For normalization test
 
 describe('DB', () => {
   let testPool: Pool;
+  let getUser: typeof import('../db.ts').getUser;
+  let insertUser: typeof import('../db.ts').insertUser;
+  let updateUser: typeof import('../db.ts').updateUser;
+  let initDbSchema: typeof import('../db.ts').initDbSchema;
 
   beforeAll(async () => {
+    // Load secrets first
+    await loadSecrets();
+
+    // Dynamically import db.ts after secrets are loaded
+    const dbModule = await import('../db.ts');
+    getUser = dbModule.getUser;
+    insertUser = dbModule.insertUser;
+    updateUser = dbModule.updateUser;
+    initDbSchema = dbModule.initDbSchema;
+
+    // Optional: Override for test DB if needed (e.g., local Postgres)
+    // process.env.DATABASE_URL = 'postgres://localhost:5432/test_tella';
+
     testPool = new Pool({
       connectionString: process.env.DATABASE_URL,
       ssl: { rejectUnauthorized: false },
