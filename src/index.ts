@@ -4,69 +4,84 @@ import {
   SecretsManagerClient,
   GetSecretValueCommand,
 } from '@aws-sdk/client-secrets-manager';
-
-// Call before importing to prevent .env errs
-await loadSecrets();
-
 import { Request, Response } from 'express';
-const { insertUser, getUser, updateUser, initDbSchema } = await import(
-  './db.ts'
-);
-const { parseIntent } = await import('./parser.ts');
 import { hashPhone } from './utils.ts';
 import { Buffer } from 'buffer';
 import crypto from 'crypto';
-
-// Program related logic
-const {
-  deriveUserPdaAndAta,
-  executeP2pTransfer,
-  initUserIfNeeded,
-  usdcMint,
-  programId,
-} = await import('./intent_gateway.ts');
 import twilio from 'twilio';
 
-const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_TOKEN);
+// Functions we’ll import dynamically inside main/startServer
+let insertUser: typeof import('./db.ts').insertUser;
+let getUser: typeof import('./db.ts').getUser;
+let updateUser: typeof import('./db.ts').updateUser;
+let initDbSchema: typeof import('./db.ts').initDbSchema;
+let deriveUserPdaAndAta: typeof import('./intent_gateway.ts').deriveUserPdaAndAta;
+let executeP2pTransfer: typeof import('./intent_gateway.ts').executeP2pTransfer;
+let initUserIfNeeded: typeof import('./intent_gateway.ts').initUserIfNeeded;
+let usdcMint: typeof import('./intent_gateway.ts').usdcMint;
+let programId: typeof import('./intent_gateway.ts').programId;
+let parseIntent: typeof import('./parser.ts').parseIntent;
+
+const client: twilio.Twilio = twilio(
+  process.env.TWILIO_SID || '',
+  process.env.TWILIO_TOKEN || ''
+);
 const tellaNumber = process.env.TELLA_NUMBER;
 
-async function loadSecrets() {
-  const client = new SecretsManagerClient({ region: 'us-west-1' });
+// Constants
+const EXPIRES_MS = 5 * 60 * 1000; // 5 min
+const MAX_BODY_LENGTH = 320;
+const WELCOME_MSG =
+  'Tella here 👋,\nThe easiest way to send money via SMS — secure 🔒 and reliable 🛡️';
+
+// Express app
+const app = express();
+
+// =======================
+// Exports
+// =======================
+export async function loadSecrets() {
+  const smClient = new SecretsManagerClient({ region: 'us-west-1' });
   const command = new GetSecretValueCommand({
     SecretId:
       'arn:aws:secretsmanager:us-west-1:834873818995:secret:tella-secrets-G5Tmeo',
   });
-  const response = await client.send(command);
+  const response = await smClient.send(command);
   const secrets = JSON.parse(response.SecretString || '{}');
-  Object.assign(process.env, secrets); // Merge into env vars
+  Object.assign(process.env, secrets); // Merge into env
 }
 
-// Constants for readability/simplicity
-const EXPIRES_MS = 5 * 60 * 1000; // 5 minutes
-const MAX_BODY_LENGTH = 320; // SMS-like limit for validation
-const WELCOME_MSG =
-  'Tella here 👋,\nThe easiest way to send money via SMS — secure 🔒 and reliable 🛡️'; //  Welcome msg
-
-// Create Express app.
-const app = express();
-
+// =======================
+// Main server logic
+// =======================
 async function startServer() {
+  // Load secrets first
+  await loadSecrets();
+
+  // Dynamically import modules after secrets loaded
+  ({ insertUser, getUser, updateUser, initDbSchema } = await import('./db.ts'));
+  ({ parseIntent } = await import('./parser.ts'));
+  ({
+    deriveUserPdaAndAta,
+    executeP2pTransfer,
+    initUserIfNeeded,
+    usdcMint,
+    programId,
+  } = await import('./intent_gateway.ts'));
+
   try {
+    // Init DB
     await initDbSchema();
     console.log('DB schema initialized successfully.');
 
-    // Set server port.
-    const port = 3000;
-
-    // Middleware to parse URL-encoded bodies.
+    // Middleware
     app.use(express.urlencoded({ extended: true }));
 
-    // GET route for root.
+    // Routes
     app.get('/', (_: Request, res: Response) => {
       res.send('Tella server is running!');
     });
 
-    // POST route for SMS webhook.
     app.post('/sms', async (req: Request, res: Response) => {
       // Get body
       const from = req.body.From || 'unknown';
@@ -109,7 +124,8 @@ async function startServer() {
       }
     });
 
-    // Start server.
+    // Start server
+    const port = 3000;
     app.listen(port, () => {
       console.log(`Tella server running on http://localhost:${port}`);
     });
@@ -119,7 +135,18 @@ async function startServer() {
   }
 }
 
-startServer();
+// =======================
+// Only run if executed directly
+// =======================
+if (
+  process.argv[1]?.endsWith('index.ts') ||
+  process.argv[1]?.endsWith('index.js')
+) {
+  startServer().catch((err) => {
+    console.error('Failed to start Tella server:', err);
+    process.exit(1);
+  });
+}
 
 // Handle 'direct' send intent
 async function handleDirectIntent(
