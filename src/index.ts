@@ -126,8 +126,8 @@ async function startServer() {
 
     // Start server
     const port = 3000;
-    app.listen(port, () => {
-      console.log(`Tella server running on http://localhost:${port}`);
+    app.listen(port, '0.0.0.0', () => {
+      console.log(`Tella server running on http://0.0.0.0:${port}`);
     });
   } catch (err) {
     console.error('Failed to initialize DB schema:', err);
