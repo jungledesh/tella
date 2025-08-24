@@ -32,7 +32,7 @@ const tellaNumber = process.env.TELLA_NUMBER;
 const EXPIRES_MS = 5 * 60 * 1000; // 5 min
 const MAX_BODY_LENGTH = 320;
 const WELCOME_MSG =
-  'Tella here,\n Easiest way to send money — securely 🔒';
+  'Tella 👋,\n Easiest way to send money — securely 🔒';
 
 // Express app
 const app = express();
