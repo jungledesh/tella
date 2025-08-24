@@ -315,7 +315,7 @@ async function handleConfirmationIntent(res: Response, fromHash: string) {
     `TX sent for ${fromHash} to ${recipientHash} with action ${actionID}: ${sig}`
   );
   // Update user
-  sendSmsRes(res, 'Sent ✅🔒💸');
+  sendSmsRes(res, 'Sent ✅💸🔒');
 
   // Recipient flow
   const memoTxt = pending.memo ? ` for ${pending.memo}` : '';
@@ -335,7 +335,7 @@ async function handleCancelIntent(res: Response, fromHash: string) {
     await updateUser(fromHash, { pending_actions: null });
     sendSmsRes(res, 'Transaction cancelled ❌');
   } else {
-    sendSmsRes(res, 'No pending to cancel ⚠️');
+    sendSmsRes(res, 'No pending transfer to cancel ⚠️');
   }
 }
 
@@ -344,7 +344,6 @@ function sendSmsRes(res: Response, msg: string) {
   res.status(200).send(`<Response><Message>${msg}</Message></Response>`);
 }
 
-// Add at top after imports
 async function retry<T>(
   fn: () => Promise<T>,
   retries: number = 3,
