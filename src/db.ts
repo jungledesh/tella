@@ -14,9 +14,11 @@ export async function initDbSchema() {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         phone_hash TEXT PRIMARY KEY,
-        wallet_init INTEGER DEFAULT 0,
-        pending_actions TEXT
-      )
+        wallet_init BOOLEAN DEFAULT FALSE,
+        pending_actions TEXT,
+        is_bank_linked BOOLEAN DEFAULT FALSE,
+        plaid_access_token TEXT
+      );
     `);
     console.log('Users table initialized.');
   } catch (err) {
