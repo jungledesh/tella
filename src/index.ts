@@ -9,6 +9,7 @@ import { hashPhone } from './utils.ts';
 import { Buffer } from 'buffer';
 import crypto from 'crypto';
 import twilio from 'twilio';
+import { Configuration, PlaidApi, Products, CountryCode } from 'plaid';
 
 // Functions we’ll import dynamically inside main/startServer
 let insertUser: typeof import('./db.ts').insertUser;
@@ -123,6 +124,64 @@ async function startServer() {
       }
     });
 
+    app.post('/welcome', async (req: Request, res: Response) => {
+      const { phone } = req.body; // From landing form
+      if (!phone) return res.status(400).json({ error: 'Phone required' });
+
+      let fromHash: string;
+      try {
+        fromHash = hashPhone(phone);
+      } catch {
+        return res.status(400).json({ error: 'Invalid phone' });
+      }
+
+      try {
+        let user = await getUser(fromHash);
+        if (!user) {
+          await insertUser(fromHash, false); // New user, wallet_init false
+          user = await getUser(fromHash);
+        }
+
+        if (user!.is_bank_linked) {
+          return res.status(200).json({ message: 'Already onboarded' });
+        }
+
+        // Generate Plaid link_token (add plaid lib: npm install plaid)
+        const plaidClient = new PlaidApi(
+          new Configuration({
+            basePath: 'https://sandbox.plaid.com', // Production: production.plaid.com
+            baseOptions: {
+              headers: {
+                'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID,
+                'PLAID-SECRET': process.env.PLAID_SECRET,
+              },
+            },
+          })
+        );
+
+        const linkResponse = await plaidClient.linkTokenCreate({
+          user: { client_user_id: fromHash },
+          client_name: 'Tella',
+          products: [Products.Auth], // For bank linking/ACH
+          country_codes: [CountryCode.Us],
+          language: 'en',
+        });
+        const linkToken = linkResponse.data.link_token;
+
+        // Send SMS with link
+        await client.messages.create({
+          body: `Welcome to Tella! Link your bank: https://link.plaid.com/link?token=${linkToken}`,
+          from: tellaNumber,
+          to: phone,
+        });
+
+        return res.status(200).json({ message: 'Link sent' });
+      } catch (err) {
+        console.error('Welcome error:', err);
+        return res.status(500).json({ error: 'Onboarding failed' });
+      }
+    });
+
     // Start server
     const port = 3000;
     app.listen(port, '0.0.0.0', () => {
@@ -205,7 +264,9 @@ async function handleDirectIntent(
       expires: Date.now() + EXPIRES_MS,
       senderPhone: from,
       recipientPhone: parsed.recipient,
-    })
+    }),
+    sender?.is_bank_linked ? true : false,
+    sender?.plaid_access_token
   );
 
   // Insert recipient if new

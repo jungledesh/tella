@@ -55,10 +55,27 @@ function validatePendingActions(pendingActions: string): string {
   return pendingActions;
 }
 
+function validateBankLinked(isBankLinked: boolean): number {
+  if (typeof isBankLinked !== 'boolean') {
+    throw new Error('Invalid is_bank_linked: boolean required');
+  }
+  return isBankLinked ? 1 : 0;
+}
+
+function validatePlaidToken(plaidAccessToken: string): string {
+  if (typeof plaidAccessToken !== 'string') {
+    throw new Error('Invalid plaid_access_token: string required');
+  }
+  return plaidAccessToken;
+}
+
 // Get user
-export async function getUser(
-  phoneHash: string
-): Promise<{ wallet_init: number; pending_actions: string } | null> {
+export async function getUser(phoneHash: string): Promise<{
+  wallet_init: number;
+  pending_actions: string;
+  is_bank_linked: number;
+  plaid_access_token: string;
+} | null> {
   try {
     phoneHash = validatePhoneHash(phoneHash);
     const res = await pool.query(`SELECT * FROM users WHERE phone_hash = $1`, [
@@ -75,17 +92,22 @@ export async function getUser(
 export async function insertUser(
   phoneHash: string,
   walletInit: boolean = false,
-  pendingActions: string = ''
+  pendingActions: string = '',
+  is_bank_linked: boolean = false,
+  plaid_access_token: string = ''
 ): Promise<string> {
   try {
     phoneHash = validatePhoneHash(phoneHash);
     const initVal = validateWalletInit(walletInit);
     pendingActions = validatePendingActions(pendingActions);
+    const initBankLink = validateBankLinked(is_bank_linked);
+    plaid_access_token = validatePlaidToken(plaid_access_token);
+
     await pool.query(
-      `INSERT INTO users (phone_hash, wallet_init, pending_actions)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (phone_hash) DO UPDATE SET wallet_init = $2, pending_actions = $3`,
-      [phoneHash, initVal, pendingActions]
+      `INSERT INTO users (phone_hash, wallet_init, pending_actions, is_bank_linked, plaid_access_token)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (phone_hash) DO UPDATE SET wallet_init = $2, pending_actions = $3, is_bank_linked = $4, plaid_access_token = $5`,
+      [phoneHash, initVal, pendingActions, initBankLink, plaid_access_token]
     );
     return 'User info saved';
   } catch (err) {
@@ -97,7 +119,12 @@ export async function insertUser(
 // Update user
 export async function updateUser(
   phoneHash: string,
-  updates: { wallet_init?: boolean; pending_actions?: string | null }
+  updates: {
+    wallet_init?: boolean;
+    pending_actions?: string | null;
+    is_bank_linked?: boolean;
+    plaid_access_token?: string | null;
+  }
 ): Promise<string> {
   try {
     phoneHash = validatePhoneHash(phoneHash);
@@ -116,6 +143,19 @@ export async function updateUser(
       }
       setClauses.push(`pending_actions = $${idx++}`);
       values.push(updates.pending_actions);
+    }
+
+    if (updates.is_bank_linked !== undefined) {
+      setClauses.push(`is_bank_linked = $${idx++}`);
+      values.push(validateBankLinked(updates.is_bank_linked));
+    }
+
+    if (updates.plaid_access_token !== undefined) {
+      if (updates.plaid_access_token != null) {
+        validatePlaidToken(updates.plaid_access_token);
+      }
+      setClauses.push(`plaid_access_token= $${idx++}`);
+      values.push(updates.plaid_access_token);
     }
 
     if (!setClauses.length) {
