@@ -76,6 +76,7 @@ async function startServer() {
 
     // Middleware
     app.use(express.urlencoded({ extended: true }));
+    app.use(express.json()); // For JSON bodies if needed for proxy calls
 
     // Routes
     app.get('/', (_: Request, res: Response) => {
@@ -115,70 +116,14 @@ async function startServer() {
           await handleConfirmationIntent(res, fromHash);
         } else if (parsed.trigger === 'cancel') {
           await handleCancelIntent(res, fromHash);
+        } else if (parsed.trigger === 'onboard') {
+          await handleOnboardIntent(res, fromHash, from);
         } else {
           return sendSmsRes(res, 'Invalid intent ⚠️');
         }
       } catch (err) {
         console.error('SMS error:', err);
         return sendSmsRes(res, 'Error parsing intent ⚠️');
-      }
-    });
-
-    app.post('/welcome', async (req: Request, res: Response) => {
-      const { phone } = req.body; // From landing form
-      if (!phone) return res.status(400).json({ error: 'Phone required' });
-
-      let fromHash: string;
-      try {
-        fromHash = hashPhone(phone);
-      } catch {
-        return res.status(400).json({ error: 'Invalid phone' });
-      }
-
-      try {
-        let user = await getUser(fromHash);
-        if (!user) {
-          await insertUser(fromHash, false); // New user, wallet_init false
-          user = await getUser(fromHash);
-        }
-
-        if (user!.is_bank_linked) {
-          return res.status(200).json({ message: 'Already onboarded' });
-        }
-
-        // Generate Plaid link_token (add plaid lib: npm install plaid)
-        const plaidClient = new PlaidApi(
-          new Configuration({
-            basePath: 'https://sandbox.plaid.com', // Production: production.plaid.com
-            baseOptions: {
-              headers: {
-                'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID,
-                'PLAID-SECRET': process.env.PLAID_SECRET,
-              },
-            },
-          })
-        );
-
-        const linkResponse = await plaidClient.linkTokenCreate({
-          user: { client_user_id: fromHash },
-          client_name: 'Tella',
-          products: [Products.Auth], // For bank linking/ACH
-          country_codes: [CountryCode.Us],
-          language: 'en',
-        });
-        const linkToken = linkResponse.data.link_token;
-
-        // Send SMS with link
-        await client.messages.create({
-          body: `Welcome to Tella! Link your bank: https://link.plaid.com/link?token=${linkToken}`,
-          from: tellaNumber,
-          to: phone,
-        });
-
-        return res.status(200).json({ message: 'Link sent' });
-      } catch (err) {
-        console.error('Welcome error:', err);
-        return res.status(500).json({ error: 'Onboarding failed' });
       }
     });
 
@@ -204,6 +149,70 @@ if (
     console.error('Failed to start Tella server:', err);
     process.exit(1);
   });
+}
+
+// Handle 'onboard' intent
+async function handleOnboardIntent(
+  res: Response,
+  fromHash: string,
+  from: string
+) {
+  try {
+    let user = await getUser(fromHash);
+    if (!user) {
+      await insertUser(fromHash, false, '', false, '');
+      user = await getUser(fromHash);
+    }
+
+    if (user!.is_bank_linked) {
+      return sendSmsRes(res, 'Already onboarded ✅');
+    }
+
+    // Generate Plaid link_token
+    const plaidClient = new PlaidApi(
+      new Configuration({
+        basePath: 'https://sandbox.plaid.com', // Production: production.plaid.com
+        baseOptions: {
+          headers: {
+            'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID,
+            'PLAID-SECRET': process.env.PLAID_SECRET,
+          },
+        },
+      })
+    );
+
+    const linkResponse = await plaidClient.linkTokenCreate({
+      user: { client_user_id: fromHash },
+      client_name: 'Tella',
+      products: [Products.Auth],
+      country_codes: [CountryCode.Us],
+      language: 'en',
+    });
+    const linkToken = linkResponse.data.link_token;
+
+    if (!user!.wallet_init) {
+      // Init wallet if not done
+      const fromHashBytes = Uint8Array.from(Buffer.from(fromHash, 'hex'));
+      const { userPda, ata } = deriveUserPdaAndAta(
+        fromHashBytes,
+        programId,
+        usdcMint
+      );
+      await initUserIfNeeded(fromHash, fromHashBytes, userPda, ata);
+    }
+
+    // Send SMS with link
+    await client.messages.create({
+      body: `Welcome to Tella! Link your bank: https://link.plaid.com/link?token=${linkToken}`,
+      from: tellaNumber,
+      to: from,
+    });
+
+    sendSmsRes(res, 'Sms sent to link your bank ✅');
+  } catch (err) {
+    console.error('Onboard error:', err);
+    sendSmsRes(res, 'Onboarding failed ⚠️');
+  }
 }
 
 // Handle 'direct' send intent
@@ -266,12 +275,12 @@ async function handleDirectIntent(
       recipientPhone: parsed.recipient,
     }),
     sender?.is_bank_linked ? true : false,
-    sender?.plaid_access_token
+    sender?.plaid_access_token || ''
   );
 
   // Insert recipient if new
   if (!(await getUser(recipientHash))) {
-    await insertUser(recipientHash, false);
+    await insertUser(recipientHash, false, '', false, '');
   }
 
   // Welcome if new
