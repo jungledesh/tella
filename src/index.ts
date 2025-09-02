@@ -76,7 +76,6 @@ async function startServer() {
 
     // Middleware
     app.use(express.urlencoded({ extended: true }));
-    app.use(express.json()); // For JSON bodies if needed for proxy calls
 
     // Routes
     app.get('/', (_: Request, res: Response) => {
@@ -165,7 +164,7 @@ async function handleOnboardIntent(
     }
 
     if (user!.is_bank_linked) {
-      return sendSmsRes(res, 'Already onboarded ✅');
+      return res.status(200).json({ message: 'Already onboarded ✅' });
     }
 
     // Generate Plaid link_token
@@ -208,10 +207,10 @@ async function handleOnboardIntent(
       to: from,
     });
 
-    sendSmsRes(res, 'Sms sent to link your bank ✅');
+    return res.status(200).json({ message: 'Sms sent to link your bank ✅' });
   } catch (err) {
     console.error('Onboard error:', err);
-    sendSmsRes(res, 'Onboarding failed ⚠️');
+    return res.status(500).json({ message: 'Onboarding failed ⚠️' });
   }
 }
 
