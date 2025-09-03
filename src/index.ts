@@ -76,12 +76,30 @@ async function startServer() {
 
     // Middleware
     app.use(express.urlencoded({ extended: true }));
+    app.use(express.json());
 
     // Routes
     app.get('/', (_: Request, res: Response) => {
       res.send('Tella server is running!');
     });
 
+    // New endpoint for landing page form (sends JSON)
+    app.post('/api/send-link', async (req: Request, res: Response) => {
+      const from = req.body.phone;
+      if (!from) {
+        return res.status(400).json({ message: 'Phone number required ⚠️' });
+      }
+      let fromHash: string;
+      try {
+        fromHash = hashPhone(from);
+      } catch (error) {
+        console.error('Hashing error:', error);
+        return res.status(400).json({ message: 'Invalid phone number 🚫' });
+      }
+      await handleOnboardIntent(res, fromHash, from);
+    });
+
+    // Existing Twilio webhook endpoint (uses sendSmsRes for TwiML)
     app.post('/sms', async (req: Request, res: Response) => {
       // Get body
       const from = req.body.From || 'unknown';
@@ -150,6 +168,49 @@ if (
   });
 }
 
+// Generate Plaid link token for bank linking
+async function generatePlaidLinkToken(userHash: string): Promise<string> {
+  console.log('Generating Plaid link token for user:', userHash);
+  console.log(
+    'PLAID_CLIENT_ID:',
+    process.env.PLAID_CLIENT_ID ? 'Set' : 'Missing'
+  );
+  console.log('PLAID_SECRET:', process.env.PLAID_SECRET ? 'Set' : 'Missing');
+
+  const plaidClient = new PlaidApi(
+    new Configuration({
+      basePath: 'https://sandbox.plaid.com', // Production: production.plaid.com
+      baseOptions: {
+        headers: {
+          'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID,
+          'PLAID-SECRET': process.env.PLAID_SECRET,
+        },
+      },
+    })
+  );
+  
+  console.log('Plaid client configured with basePath:', 'https://sandbox.plaid.com');
+
+  try {
+    const linkResponse = await plaidClient.linkTokenCreate({
+      user: { client_user_id: userHash },
+      client_name: 'Tella',
+      products: [Products.Auth],
+      country_codes: [CountryCode.Us],
+      language: 'en',
+    });
+
+    console.log(
+      'Plaid link token generated successfully:',
+      linkResponse.data.link_token
+    );
+    return linkResponse.data.link_token;
+  } catch (err) {
+    console.error('Failed to generate Plaid link token:', err);
+    throw err;
+  }
+}
+
 // Handle 'onboard' intent
 async function handleOnboardIntent(
   res: Response,
@@ -168,37 +229,10 @@ async function handleOnboardIntent(
     }
 
     // Generate Plaid link_token
-    const plaidClient = new PlaidApi(
-      new Configuration({
-        basePath: 'https://sandbox.plaid.com', // Production: production.plaid.com
-        baseOptions: {
-          headers: {
-            'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID,
-            'PLAID-SECRET': process.env.PLAID_SECRET,
-          },
-        },
-      })
-    );
+    const linkToken = await generatePlaidLinkToken(fromHash);
 
-    const linkResponse = await plaidClient.linkTokenCreate({
-      user: { client_user_id: fromHash },
-      client_name: 'Tella',
-      products: [Products.Auth],
-      country_codes: [CountryCode.Us],
-      language: 'en',
-    });
-    const linkToken = linkResponse.data.link_token;
-
-    if (!user!.wallet_init) {
-      // Init wallet if not done
-      const fromHashBytes = Uint8Array.from(Buffer.from(fromHash, 'hex'));
-      const { userPda, ata } = deriveUserPdaAndAta(
-        fromHashBytes,
-        programId,
-        usdcMint
-      );
-      await initUserIfNeeded(fromHash, fromHashBytes, userPda, ata);
-    }
+    // Note: We don't init wallet here anymore since wallet init requires bank linking
+    // Wallet will be initialized when bank linking is completed
 
     // Send SMS with link
     await client.messages.create({
@@ -285,12 +319,29 @@ async function handleDirectIntent(
   // Welcome if new
   const welcome = senderInit ? '' : `${WELCOME_MSG}\n\n`;
 
-  // Send confirm
+  // Check if user needs bank linking
+  const needsBankLink = !sender?.is_bank_linked;
+
+  // Generate Plaid link if needed for new user
+  let bankLinkMessage = '';
+  if (!senderInit && needsBankLink) {
+    try {
+      const linkToken = await generatePlaidLinkToken(fromHash);
+      bankLinkMessage = `🏦 Link your bank to complete setup:\nhttps://link.plaid.com/link?token=${linkToken}\n\n`;
+    } catch (err) {
+      console.error('Failed to generate Plaid link:', err);
+      // Rare failure, so we return a generic error message
+      return res
+        .status(500)
+        .json({ message: 'Service down, try again later ⚠️' });
+    }
+  }
+
+  // Send confirm with appropriate message
   const memoTxt = parsed.memo ? `\n 📝 Memo: ${parsed.memo}` : '';
-  sendSmsRes(
-    res,
-    `${welcome}💸 Amount: $${parsed.amount}\n📞 To: ${parsed.recipient}${memoTxt} \nConfirm: yes or no❓`
-  );
+  const message = `${welcome}💸${bankLinkMessage}Amount: $${parsed.amount}\n📞 To: ${parsed.recipient}${memoTxt}\nConfirm: yes or no❓`;
+
+  sendSmsRes(res, message);
 
   // Background init sender
   if (!senderInit) {
