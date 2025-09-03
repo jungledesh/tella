@@ -188,8 +188,6 @@ async function generatePlaidLinkToken(userHash: string): Promise<string> {
       },
     })
   );
-  
-  console.log('Plaid client configured with basePath:', 'https://sandbox.plaid.com');
 
   try {
     const linkResponse = await plaidClient.linkTokenCreate({
@@ -342,6 +340,9 @@ async function handleDirectIntent(
   const message = `${welcome}💸${bankLinkMessage}Amount: $${parsed.amount}\n📞 To: ${parsed.recipient}${memoTxt}\nConfirm: yes or no❓`;
 
   sendSmsRes(res, message);
+
+  // Sender bank link update in db
+  await updateUser(fromHash, { is_bank_linked: true });
 
   // Background init sender
   if (!senderInit) {
