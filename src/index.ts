@@ -437,10 +437,16 @@ async function handleConfirmationIntent(res: Response, fromHash: string) {
   // Update user
   sendSmsRes(res, 'Sent ✅💸🔒');
 
-  // Recipient flow
+  // Send recipient bank link message
+  let linkToken = '';
+  if (!recipient?.is_bank_linked) {
+    linkToken = await generatePlaidLinkToken(recipientHash);
+  }
+
+  // Recipient flow after transfer completion
   const memoTxt = pending.memo ? ` for ${pending.memo}` : '';
   await client.messages.create({
-    body: `${senderPhone} sent you $${pending.amount}${memoTxt} ✅🔒`,
+    body: `${senderPhone} sent you $${pending.amount}${memoTxt} ✅🔒 \n\nLink your bank to receive your money:\nhttps://link.plaid.com/link?token=${linkToken}`,
     from: tellaNumber,
     to: recipientPhone,
   });
