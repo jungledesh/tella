@@ -314,11 +314,11 @@ async function handleDirectIntent(
     await insertUser(recipientHash, false, '', false, '');
   }
 
-  // Welcome if new
-  const welcome = senderInit ? '' : `${WELCOME_MSG}\n\n`;
-
   // Check if user needs bank linking
   const needsBankLink = !sender?.is_bank_linked;
+
+  // Welcome if new
+  const welcome = !needsBankLink ? '' : `${WELCOME_MSG}\n\n`;
 
   // Generate Plaid link if needed for new user
   let bankLinkMessage = '';
