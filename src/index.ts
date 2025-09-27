@@ -83,6 +83,54 @@ async function startServer() {
       res.send('Tella server is running!');
     });
 
+    // New endpoint for front-end signup
+    app.post('/api/signup', async (req: Request, res: Response) => {
+      const { phone, pin, paymentMethodId, idempotencyKey } = req.body;
+
+      // Validate inputs
+      if (!phone || !pin || !paymentMethodId || !idempotencyKey) {
+        return res.status(400).json({ error: 'Missing required fields' });
+      }
+
+      // Validate phone number format
+      const cleaned = phone.replace(/\D/g, '');
+      if (!/^1?[2-9]\d{9}$/.test(cleaned)) {
+        return res.status(400).json({ error: 'Invalid US mobile number' });
+      }
+
+      // Validate PIN format (6 digits)
+      if (!/^\d{6}$/.test(pin)) {
+        return res.status(400).json({ error: 'PIN must be 6 digits' });
+      }
+
+      const normalizedPhone = `+1${cleaned.replace(/^1/, '')}`;
+      let userHash: string;
+      try {
+        userHash = hashPhone(normalizedPhone);
+      } catch (error) {
+        console.error('Hashing error:', error);
+        return res.status(400).json({ error: 'Invalid phone number' });
+      }
+
+      try {
+        console.log('User onboarded:', {
+          userHash,
+          phone: normalizedPhone,
+          paymentMethodId,
+          timestamp: new Date().toISOString(),
+        });
+
+        return res.status(200).json({
+          success: true,
+          message: 'User onboarded successfully',
+          user: { userHash, phone: normalizedPhone, paymentMethodId },
+        });
+      } catch (error) {
+        console.error('Signup error:', error);
+        return res.status(500).json({ error: 'Failed to process signup' });
+      }
+    });
+
     // New endpoint for landing page form (sends JSON)
     app.post('/api/send-link', async (req: Request, res: Response) => {
       const from = req.body.phone;
