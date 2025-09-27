@@ -9,7 +9,6 @@ import { hashPhone } from './utils.ts';
 import { Buffer } from 'buffer';
 import crypto from 'crypto';
 import twilio from 'twilio';
-import { Configuration, PlaidApi, Products, CountryCode } from 'plaid';
 
 // Functions we’ll import dynamically inside main/startServer
 let insertUser: typeof import('./db.ts').insertUser;
@@ -216,47 +215,6 @@ if (
   });
 }
 
-// Generate Plaid link token for bank linking
-async function generatePlaidLinkToken(userHash: string): Promise<string> {
-  console.log('Generating Plaid link token for user:', userHash);
-  console.log(
-    'PLAID_CLIENT_ID:',
-    process.env.PLAID_CLIENT_ID ? 'Set' : 'Missing'
-  );
-  console.log('PLAID_SECRET:', process.env.PLAID_SECRET ? 'Set' : 'Missing');
-
-  const plaidClient = new PlaidApi(
-    new Configuration({
-      basePath: 'https://sandbox.plaid.com', // Production: production.plaid.com
-      baseOptions: {
-        headers: {
-          'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID,
-          'PLAID-SECRET': process.env.PLAID_SECRET,
-        },
-      },
-    })
-  );
-
-  try {
-    const linkResponse = await plaidClient.linkTokenCreate({
-      user: { client_user_id: userHash },
-      client_name: 'Tella',
-      products: [Products.Auth],
-      country_codes: [CountryCode.Us],
-      language: 'en',
-    });
-
-    console.log(
-      'Plaid link token generated successfully:',
-      linkResponse.data.link_token
-    );
-    return linkResponse.data.link_token;
-  } catch (err) {
-    console.error('Failed to generate Plaid link token:', err);
-    throw err;
-  }
-}
-
 // Handle 'onboard' intent
 async function handleOnboardIntent(
   res: Response,
@@ -266,7 +224,7 @@ async function handleOnboardIntent(
   try {
     let user = await getUser(fromHash);
     if (!user) {
-      await insertUser(fromHash, false, '', false, '');
+      await insertUser(fromHash, false, '', false);
       user = await getUser(fromHash);
     }
 
@@ -274,15 +232,12 @@ async function handleOnboardIntent(
       return res.status(200).json({ message: 'Already onboarded ✅' });
     }
 
-    // Generate Plaid link_token
-    const linkToken = await generatePlaidLinkToken(fromHash);
-
     // Note: We don't init wallet here anymore since wallet init requires bank linking
     // Wallet will be initialized when bank linking is completed
 
     // Send SMS with link
     await client.messages.create({
-      body: `Welcome to Tella! Link your bank: https://link.plaid.com/link?token=${linkToken}`,
+      body: WELCOME_MSG,
       from: tellaNumber,
       to: from,
     });
@@ -353,13 +308,12 @@ async function handleDirectIntent(
       senderPhone: from,
       recipientPhone: parsed.recipient,
     }),
-    sender?.is_bank_linked ? true : false,
-    sender?.plaid_access_token || ''
+    sender?.is_bank_linked ? true : false
   );
 
   // Insert recipient if new
   if (!(await getUser(recipientHash))) {
-    await insertUser(recipientHash, false, '', false, '');
+    await insertUser(recipientHash, false, '', false);
   }
 
   // Check if user needs bank linking
@@ -368,29 +322,11 @@ async function handleDirectIntent(
   // Welcome if new
   const welcome = !needsBankLink ? '' : `${WELCOME_MSG}\n\n`;
 
-  // Generate Plaid link if needed for new user
-  let bankLinkMessage = '';
-  if (!senderInit && needsBankLink) {
-    try {
-      const linkToken = await generatePlaidLinkToken(fromHash);
-      bankLinkMessage = `🏦 Link your bank to complete setup:\nhttps://link.plaid.com/link?token=${linkToken}\n\n`;
-    } catch (err) {
-      console.error('Failed to generate Plaid link:', err);
-      // Rare failure, so we return a generic error message
-      return res
-        .status(500)
-        .json({ message: 'Service down, try again later ⚠️' });
-    }
-  }
-
   // Send confirm with appropriate message
   const memoTxt = parsed.memo ? `\n 📝 Memo: ${parsed.memo}` : '';
-  const message = `${welcome}💸${bankLinkMessage}Amount: $${parsed.amount}\n📞 To: ${parsed.recipient}${memoTxt}\nConfirm: yes or no❓`;
+  const message = `${welcome}💸Amount: $${parsed.amount}\n📞 To: ${parsed.recipient}${memoTxt}\nConfirm: yes or no❓`;
 
   sendSmsRes(res, message);
-
-  // Sender bank link update in db
-  await updateUser(fromHash, { is_bank_linked: true });
 
   // Background init sender
   if (!senderInit) {
@@ -485,16 +421,10 @@ async function handleConfirmationIntent(res: Response, fromHash: string) {
   // Update user
   sendSmsRes(res, 'Sent ✅💸🔒');
 
-  // Send recipient bank link message
-  let linkToken = '';
-  if (!recipient?.is_bank_linked) {
-    linkToken = await generatePlaidLinkToken(recipientHash);
-  }
-
   // Recipient flow after transfer completion
   const memoTxt = pending.memo ? ` for ${pending.memo}` : '';
   await client.messages.create({
-    body: `${senderPhone} sent you $${pending.amount}${memoTxt} ✅🔒 \n\nLink your bank to receive your money:\nhttps://link.plaid.com/link?token=${linkToken}`,
+    body: `${senderPhone} sent you $${pending.amount}${memoTxt} ✅🔒`,
     from: tellaNumber,
     to: recipientPhone,
   });

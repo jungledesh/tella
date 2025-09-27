@@ -44,13 +44,12 @@ describe('DB', () => {
       wallet_init: false,
       pending_actions: '',
       is_bank_linked: false,
-      plaid_access_token: '',
     });
   });
 
   test('insertUser overwrites existing user', async () => {
-    await insertUser(dummyHash, false, '{}', false, '');
-    await insertUser(dummyHash, true, '{"updated":1}', true, 'token123');
+    await insertUser(dummyHash, false, '{}', false);
+    await insertUser(dummyHash, true, '{"updated":1}', true);
 
     const user = await getUser(dummyHash);
     expect(user).toEqual({
@@ -58,7 +57,6 @@ describe('DB', () => {
       wallet_init: true,
       pending_actions: '{"updated":1}',
       is_bank_linked: true,
-      plaid_access_token: 'token123',
     });
   });
 
@@ -75,11 +73,6 @@ describe('DB', () => {
     await expect(insertUser(dummyHash, false, 123)).rejects.toThrow();
     // @ts-expect-error at this point you should know
     await expect(insertUser(dummyHash, false, '', 'true')).rejects.toThrow();
-
-    await expect(
-      // @ts-expect-error testing w/ invalid types
-      insertUser(dummyHash, false, '', false, 123)
-    ).rejects.toThrow();
   });
 
   test('insertUser normalizes uppercase hash', async () => {
@@ -131,27 +124,12 @@ describe('DB', () => {
     expect(user?.is_bank_linked).toBe(true);
   });
 
-  test('updateUser updates plaid_access_token only', async () => {
-    await insertUser(dummyHash);
-    await updateUser(dummyHash, { plaid_access_token: 'token123' });
-    const user = await getUser(dummyHash);
-    expect(user?.plaid_access_token).toBe('token123');
-  });
-
-  test('updateUser sets plaid_access_token to null', async () => {
-    await insertUser(dummyHash, false, '', false, 'token123');
-    await updateUser(dummyHash, { plaid_access_token: null });
-    const user = await getUser(dummyHash);
-    expect(user?.plaid_access_token).toBeNull();
-  });
-
   test('updateUser updates multiple fields at once', async () => {
-    await insertUser(dummyHash, false, '{"orig":1}', false, 'token0');
+    await insertUser(dummyHash, false, '{"orig":1}', false);
     await updateUser(dummyHash, {
       wallet_init: true,
       pending_actions: '{"updated":1}',
       is_bank_linked: true,
-      plaid_access_token: 'token123',
     });
     const user = await getUser(dummyHash);
     expect(user).toEqual({
@@ -159,7 +137,6 @@ describe('DB', () => {
       wallet_init: true,
       pending_actions: '{"updated":1}',
       is_bank_linked: true,
-      plaid_access_token: 'token123',
     });
   });
 
@@ -190,13 +167,5 @@ describe('DB', () => {
     await updateUser(dummyHash, { pending_actions: special });
     const user = await getUser(dummyHash);
     expect(user?.pending_actions).toBe(special);
-  });
-
-  test('updateUser handles special chars in plaid_access_token', async () => {
-    await insertUser(dummyHash);
-    const special = 'tok"en\\123';
-    await updateUser(dummyHash, { plaid_access_token: special });
-    const user = await getUser(dummyHash);
-    expect(user?.plaid_access_token).toBe(special);
   });
 });
