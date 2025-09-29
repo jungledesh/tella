@@ -22,12 +22,6 @@ let usdcMint: typeof import('./intent_gateway.ts').usdcMint;
 let programId: typeof import('./intent_gateway.ts').programId;
 let parseIntent: typeof import('./parser.ts').parseIntent;
 
-const client: twilio.Twilio = twilio(
-  process.env.TWILIO_SID || '',
-  process.env.TWILIO_TOKEN || ''
-);
-const tellaNumber = process.env.TELLA_NUMBER;
-
 // Constants
 const EXPIRES_MS = 5 * 60 * 1000; // 5 min
 const MAX_BODY_LENGTH = 320;
@@ -56,6 +50,13 @@ export async function loadSecrets() {
 async function startServer() {
   // Load secrets first
   await loadSecrets();
+
+  // Initialize Twilio client after secrets are loaded
+  const client: twilio.Twilio = twilio(
+    process.env.TWILIO_SID,
+    process.env.TWILIO_TOKEN
+  );
+  const tellaNumber = process.env.TELLA_NUMBER || '';
 
   // Dynamically import modules after secrets loaded
   ({ insertUser, getUser, updateUser, initDbSchema } = await import('./db.ts'));
@@ -143,7 +144,7 @@ async function startServer() {
         console.error('Hashing error:', error);
         return res.status(400).json({ message: 'Invalid phone number 🚫' });
       }
-      await handleOnboardIntent(res, fromHash, from);
+      await handleOnboardIntent(res, fromHash, from, client, tellaNumber);
     });
 
     // Existing Twilio webhook endpoint (uses sendSmsRes for TwiML)
@@ -177,11 +178,11 @@ async function startServer() {
         if (parsed.trigger === 'direct') {
           await handleDirectIntent(res, fromHash, from, parsed);
         } else if (parsed.trigger === 'confirmation') {
-          await handleConfirmationIntent(res, fromHash);
+          await handleConfirmationIntent(res, fromHash, client, tellaNumber);
         } else if (parsed.trigger === 'cancel') {
           await handleCancelIntent(res, fromHash);
         } else if (parsed.trigger === 'onboard') {
-          await handleOnboardIntent(res, fromHash, from);
+          await handleOnboardIntent(res, fromHash, from, client, tellaNumber);
         } else {
           return sendSmsRes(res, 'Invalid intent ⚠️');
         }
@@ -219,7 +220,9 @@ if (
 async function handleOnboardIntent(
   res: Response,
   fromHash: string,
-  from: string
+  from: string,
+  client: twilio.Twilio,
+  tellaNumber: string
 ) {
   try {
     let user = await getUser(fromHash);
@@ -334,7 +337,12 @@ async function handleDirectIntent(
 }
 
 // Handle 'confirmation' intent
-async function handleConfirmationIntent(res: Response, fromHash: string) {
+async function handleConfirmationIntent(
+  res: Response,
+  fromHash: string,
+  client: twilio.Twilio,
+  tellaNumber: string
+) {
   const user = await getUser(fromHash);
   if (!user?.pending_actions) {
     return sendSmsRes(res, 'No pending transfer ⚠️');

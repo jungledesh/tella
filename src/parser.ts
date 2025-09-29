@@ -39,6 +39,7 @@ Output valid JSON with exactly these fields:
   - "direct" if the SMS contains intent words like send/pay/transfer/give/snd/giv/spot/snd pls or if no explicit trigger word exists.
   - "confirmation" if it contains yes/confirm/y/yeah/yep/ok/sure or other affirmative words. 
   - "cancel" if it contains no/nah/cancel/decline/stop/nope. 
+  - "onboard" if it contains i want to user tella/onboard/start using or other such affirmative words to express onboarding or to start using tella
 
 - vCard formats: If present, extract FN (full name) or TEL (phone) for recipient.
 
