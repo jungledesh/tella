@@ -5,10 +5,11 @@ import {
   GetSecretValueCommand,
 } from '@aws-sdk/client-secrets-manager';
 import { Request, Response } from 'express';
-import { hashPhone } from './utils.ts';
+import { hashPhone, normalizePhoneToE164 } from './utils.ts';
 import { Buffer } from 'buffer';
 import crypto from 'crypto';
 import twilio from 'twilio';
+import Stripe from 'stripe';
 
 // Functions we’ll import dynamically inside main/startServer
 let insertUser: typeof import('./db.ts').insertUser;
@@ -29,6 +30,53 @@ const WELCOME_MSG = 'Tella 👋,\n Easiest way to send money — securely 🔒';
 
 // Express app
 const app = express();
+
+// =======================
+// Stripe Helper
+// =======================
+async function processStripeCustomer(
+  stripe: Stripe,
+  phone: string,
+  paymentMethodId: string,
+  idempotencyKey: string
+) {
+  // Create Stripe Customer
+  const customer = await stripe.customers.create(
+    {
+      phone,
+      metadata: { signupDate: new Date().toISOString() },
+    },
+    { idempotencyKey: `customer-${idempotencyKey}` }
+  );
+
+  // Attach Payment Method
+  await stripe.paymentMethods.attach(paymentMethodId, {
+    customer: customer.id,
+  });
+
+  // Set as default payment method
+  await stripe.customers.update(customer.id, {
+    invoice_settings: {
+      default_payment_method: paymentMethodId,
+    },
+  });
+
+  return customer.id;
+}
+
+// Type guard for Stripe errors
+function isStripeError(
+  error: unknown
+): error is { statusCode: number; code: string } {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'statusCode' in error &&
+    'code' in error &&
+    typeof (error as { statusCode: unknown }).statusCode === 'number' &&
+    typeof (error as { code: unknown }).code === 'string'
+  );
+}
 
 // =======================
 // Exports
@@ -58,6 +106,11 @@ async function startServer() {
   );
   const tellaNumber = process.env.TELLA_NUMBER || '';
 
+  // Initialize Stripe client
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+    apiVersion: '2025-08-27.basil',
+  });
+
   // Dynamically import modules after secrets loaded
   ({ insertUser, getUser, updateUser, initDbSchema } = await import('./db.ts'));
   ({ parseIntent } = await import('./parser.ts'));
@@ -78,32 +131,29 @@ async function startServer() {
     app.use(express.urlencoded({ extended: true }));
     app.use(express.json());
 
-    // Routes
+    // Home Route
     app.get('/', (_: Request, res: Response) => {
       res.send('Tella server is running!');
     });
 
-    // New endpoint for front-end signup
+    // Landing Form Onboarding Route
     app.post('/api/signup', async (req: Request, res: Response) => {
-      const { phone, pin, paymentMethodId, idempotencyKey } = req.body;
+      const { phone, hashedPin, paymentMethodId, idempotencyKey } = req.body;
 
       // Validate inputs
-      if (!phone || !pin || !paymentMethodId || !idempotencyKey) {
+      if (!phone || !hashedPin || !paymentMethodId || !idempotencyKey) {
         return res.status(400).json({ error: 'Missing required fields' });
       }
 
-      // Validate phone number format
-      const cleaned = phone.replace(/\D/g, '');
-      if (!/^1?[2-9]\d{9}$/.test(cleaned)) {
-        return res.status(400).json({ error: 'Invalid US mobile number' });
+      // Validate and normalize phone number
+      let normalizedPhone: string;
+      try {
+        normalizedPhone = normalizePhoneToE164(phone);
+      } catch (error) {
+        console.error('Phone validation error:', error);
+        return res.status(400).json({ error: 'Invalid phone number' });
       }
 
-      // Validate PIN format (6 digits)
-      if (!/^\d{6}$/.test(pin)) {
-        return res.status(400).json({ error: 'PIN must be 6 digits' });
-      }
-
-      const normalizedPhone = `+1${cleaned.replace(/^1/, '')}`;
       let userHash: string;
       try {
         userHash = hashPhone(normalizedPhone);
@@ -113,38 +163,55 @@ async function startServer() {
       }
 
       try {
+        // Process Stripe Customer and Payment Method
+        const customerId = await processStripeCustomer(
+          stripe,
+          normalizedPhone,
+          paymentMethodId,
+          idempotencyKey
+        );
+
+        // Log signup details (no DB storage yet)
         console.log('User onboarded:', {
           userHash,
           phone: normalizedPhone,
           paymentMethodId,
+          customerId,
           timestamp: new Date().toISOString(),
+        });
+
+        // Send welcome SMS
+        await client.messages.create({
+          body: `${WELCOME_MSG}\nSet your pin, and link bank at www.olsms.xyz`,
+          from: tellaNumber,
+          to: normalizedPhone,
         });
 
         return res.status(200).json({
           success: true,
           message: 'User onboarded successfully',
-          user: { userHash, phone: normalizedPhone, paymentMethodId },
+          customerId: customerId,
         });
       } catch (error) {
-        console.error('Signup error:', error);
-        return res.status(500).json({ error: 'Failed to process signup' });
+        console.error('Signup error:', {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          timestamp: new Date().toISOString(),
+        });
+        const errorMessages: { [key: string]: string } = {
+          invalid_request_error: 'Invalid payment method. Please try again.',
+          authentication_error: 'Stripe authentication failed.',
+          rate_limit_error: 'Too many requests. Please try again later.',
+        };
+        const statusCode = isStripeError(error) ? error.statusCode : 400;
+        const errorCode = isStripeError(error) ? error.code : undefined;
+        return res.status(statusCode).json({
+          error:
+            (errorCode && errorMessages[errorCode]) ||
+            (error instanceof Error ? error.message : String(error)) ||
+            'Failed to process signup',
+        });
       }
-    });
-
-    // New endpoint for landing page form (sends JSON)
-    app.post('/api/send-link', async (req: Request, res: Response) => {
-      const from = req.body.phone;
-      if (!from) {
-        return res.status(400).json({ message: 'Phone number required ⚠️' });
-      }
-      let fromHash: string;
-      try {
-        fromHash = hashPhone(from);
-      } catch (error) {
-        console.error('Hashing error:', error);
-        return res.status(400).json({ message: 'Invalid phone number 🚫' });
-      }
-      await handleOnboardIntent(res, fromHash, from, client, tellaNumber);
     });
 
     // Existing Twilio webhook endpoint (uses sendSmsRes for TwiML)
