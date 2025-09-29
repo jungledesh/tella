@@ -232,12 +232,9 @@ async function handleOnboardIntent(
       return res.status(200).json({ message: 'Already onboarded ✅' });
     }
 
-    // Note: We don't init wallet here anymore since wallet init requires bank linking
-    // Wallet will be initialized when bank linking is completed
-
     // Send SMS with link
     await client.messages.create({
-      body: WELCOME_MSG,
+      body: `${WELCOME_MSG}\n Set your pin, and link bank at www.olsms.xyz`,
       from: tellaNumber,
       to: from,
     });
