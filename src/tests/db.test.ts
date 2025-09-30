@@ -4,6 +4,10 @@ import { loadSecrets } from '../index.ts';
 const dummyHash =
   '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 const dummyHashUpper = dummyHash.toUpperCase();
+const dummyPhone = '+12025550123';
+const dummyHashedPin = 'hashed_pin_123';
+const dummyStripeCustomerId = 'cus_123456789';
+const dummyStripePaymentMethodId = 'pm_123456789';
 
 describe('DB', () => {
   let testPool: Pool;
@@ -37,19 +41,53 @@ describe('DB', () => {
 
   // --- INSERT USER TESTS ---
   test('insertUser inserts with defaults', async () => {
-    await expect(insertUser(dummyHash)).resolves.toBe('User info saved');
+    await expect(
+      insertUser(
+        dummyHash,
+        false,
+        '',
+        false,
+        '1234567890',
+        'dummyHashPin',
+        dummyStripeCustomerId,
+        dummyStripePaymentMethodId
+      )
+    ).resolves.toBe('User info saved');
+
     const user = await getUser(dummyHash);
     expect(user).toEqual({
       phone_hash: dummyHash,
       wallet_init: false,
       pending_actions: '',
       is_bank_linked: false,
+      phone: '1234567890',
+      hashed_pin: 'dummyHashPin',
+      stripe_customer_id: dummyStripeCustomerId,
+      stripe_payment_method_id: dummyStripePaymentMethodId,
     });
   });
 
   test('insertUser overwrites existing user', async () => {
-    await insertUser(dummyHash, false, '{}', false);
-    await insertUser(dummyHash, true, '{"updated":1}', true);
+    await insertUser(
+      dummyHash,
+      false,
+      '{}',
+      false,
+      dummyPhone,
+      dummyHashedPin,
+      dummyStripeCustomerId,
+      dummyStripePaymentMethodId
+    );
+    await insertUser(
+      dummyHash,
+      true,
+      '{"updated":1}',
+      true,
+      dummyPhone,
+      'new_hashed_pin',
+      'new_cus_123',
+      'new_pm_123'
+    );
 
     const user = await getUser(dummyHash);
     expect(user).toEqual({
@@ -57,6 +95,10 @@ describe('DB', () => {
       wallet_init: true,
       pending_actions: '{"updated":1}',
       is_bank_linked: true,
+      phone: dummyPhone,
+      hashed_pin: 'new_hashed_pin',
+      stripe_customer_id: 'new_cus_123',
+      stripe_payment_method_id: 'new_pm_123',
     });
   });
 
@@ -71,14 +113,48 @@ describe('DB', () => {
     await expect(insertUser(dummyHash, 'true')).rejects.toThrow();
     // @ts-expect-error testing w/ invalid types
     await expect(insertUser(dummyHash, false, 123)).rejects.toThrow();
-    // @ts-expect-error at this point you should know
+    // @ts-expect-error testing w/ invalid types
     await expect(insertUser(dummyHash, false, '', 'true')).rejects.toThrow();
+    // @ts-expect-error testing w/ invalid types
+    await expect(
+      insertUser(dummyHash, false, '', false, true)
+    ).rejects.toThrow();
+    // @ts-expect-error testing w/ invalid types
+    await expect(
+      insertUser(dummyHash, false, '', false, '', true)
+    ).rejects.toThrow();
+    // @ts-expect-error testing w/ invalid types
+    await expect(
+      insertUser(dummyHash, false, '', false, '', '', true)
+    ).rejects.toThrow();
+    // @ts-expect-error testing w/ invalid types
+    await expect(
+      insertUser(dummyHash, false, '', false, '', '', '', true)
+    ).rejects.toThrow();
   });
 
   test('insertUser normalizes uppercase hash', async () => {
-    await insertUser(dummyHashUpper, true, '{}');
+    await insertUser(
+      dummyHashUpper,
+      true,
+      '{}',
+      true,
+      dummyPhone,
+      dummyHashedPin,
+      dummyStripeCustomerId,
+      dummyStripePaymentMethodId
+    );
     const user = await getUser(dummyHash);
-    expect(user?.wallet_init).toBe(true);
+    expect(user).toEqual({
+      phone_hash: dummyHash,
+      wallet_init: true,
+      pending_actions: '{}',
+      is_bank_linked: true,
+      phone: dummyPhone,
+      hashed_pin: dummyHashedPin,
+      stripe_customer_id: dummyStripeCustomerId,
+      stripe_payment_method_id: dummyStripePaymentMethodId,
+    });
   });
 
   // --- GET USER TESTS ---
@@ -95,41 +171,137 @@ describe('DB', () => {
 
   // --- UPDATE USER TESTS ---
   test('updateUser updates wallet_init only', async () => {
-    await insertUser(dummyHash, false, '{"original":1}');
+    await insertUser(
+      dummyHash,
+      false,
+      '{"original":1}',
+      false,
+      dummyPhone,
+      dummyHashedPin,
+      dummyStripeCustomerId,
+      dummyStripePaymentMethodId
+    );
     await updateUser(dummyHash, { wallet_init: true });
     const user = await getUser(dummyHash);
     expect(user?.wallet_init).toBe(true);
     expect(user?.pending_actions).toBe('{"original":1}');
+    expect(user?.phone).toBe(dummyPhone);
+    expect(user?.hashed_pin).toBe(dummyHashedPin);
+    expect(user?.stripe_customer_id).toBe(dummyStripeCustomerId);
+    expect(user?.stripe_payment_method_id).toBe(dummyStripePaymentMethodId);
   });
 
   test('updateUser updates pending_actions only', async () => {
-    await insertUser(dummyHash, true, '{"original":1}');
+    await insertUser(
+      dummyHash,
+      true,
+      '{"original":1}',
+      false,
+      dummyPhone,
+      dummyHashedPin,
+      dummyStripeCustomerId,
+      dummyStripePaymentMethodId
+    );
     await updateUser(dummyHash, { pending_actions: '{"new":2}' });
     const user = await getUser(dummyHash);
     expect(user?.pending_actions).toBe('{"new":2}');
     expect(user?.wallet_init).toBe(true);
+    expect(user?.phone).toBe(dummyPhone);
+    expect(user?.hashed_pin).toBe(dummyHashedPin);
+    expect(user?.stripe_customer_id).toBe(dummyStripeCustomerId);
+    expect(user?.stripe_payment_method_id).toBe(dummyStripePaymentMethodId);
   });
 
   test('updateUser sets pending_actions to null', async () => {
-    await insertUser(dummyHash, true, '{"original":1}');
+    await insertUser(
+      dummyHash,
+      true,
+      '{"original":1}',
+      false,
+      dummyPhone,
+      dummyHashedPin,
+      dummyStripeCustomerId,
+      dummyStripePaymentMethodId
+    );
     await updateUser(dummyHash, { pending_actions: null });
     const user = await getUser(dummyHash);
     expect(user?.pending_actions).toBeNull();
+    expect(user?.wallet_init).toBe(true);
+    expect(user?.phone).toBe(dummyPhone);
+    expect(user?.hashed_pin).toBe(dummyHashedPin);
+    expect(user?.stripe_customer_id).toBe(dummyStripeCustomerId);
+    expect(user?.stripe_payment_method_id).toBe(dummyStripePaymentMethodId);
   });
 
   test('updateUser updates is_bank_linked only', async () => {
-    await insertUser(dummyHash, false, '{}', false);
+    await insertUser(
+      dummyHash,
+      false,
+      '{}',
+      false,
+      dummyPhone,
+      dummyHashedPin,
+      dummyStripeCustomerId,
+      dummyStripePaymentMethodId
+    );
     await updateUser(dummyHash, { is_bank_linked: true });
     const user = await getUser(dummyHash);
     expect(user?.is_bank_linked).toBe(true);
+    expect(user?.phone).toBe(dummyPhone);
+    expect(user?.hashed_pin).toBe(dummyHashedPin);
+    expect(user?.stripe_customer_id).toBe(dummyStripeCustomerId);
+    expect(user?.stripe_payment_method_id).toBe(dummyStripePaymentMethodId);
+  });
+
+  test('updateUser updates Stripe fields', async () => {
+    await insertUser(
+      dummyHash,
+      false,
+      '{}',
+      false,
+      dummyPhone,
+      dummyHashedPin,
+      dummyStripeCustomerId,
+      dummyStripePaymentMethodId
+    );
+    await updateUser(dummyHash, {
+      phone: '+12025550124',
+      hashed_pin: 'new_hashed_pin',
+      stripe_customer_id: 'new_cus_123',
+      stripe_payment_method_id: 'new_pm_123',
+    });
+    const user = await getUser(dummyHash);
+    expect(user).toEqual({
+      phone_hash: dummyHash,
+      wallet_init: false,
+      pending_actions: '{}',
+      is_bank_linked: false,
+      phone: '+12025550124',
+      hashed_pin: 'new_hashed_pin',
+      stripe_customer_id: 'new_cus_123',
+      stripe_payment_method_id: 'new_pm_123',
+    });
   });
 
   test('updateUser updates multiple fields at once', async () => {
-    await insertUser(dummyHash, false, '{"orig":1}', false);
+    await insertUser(
+      dummyHash,
+      false,
+      '{"orig":1}',
+      false,
+      dummyPhone,
+      dummyHashedPin,
+      dummyStripeCustomerId,
+      dummyStripePaymentMethodId
+    );
     await updateUser(dummyHash, {
       wallet_init: true,
       pending_actions: '{"updated":1}',
       is_bank_linked: true,
+      phone: '+12025550124',
+      hashed_pin: 'new_hashed_pin',
+      stripe_customer_id: 'new_cus_123',
+      stripe_payment_method_id: 'new_pm_123',
     });
     const user = await getUser(dummyHash);
     expect(user).toEqual({
@@ -137,11 +309,24 @@ describe('DB', () => {
       wallet_init: true,
       pending_actions: '{"updated":1}',
       is_bank_linked: true,
+      phone: '+12025550124',
+      hashed_pin: 'new_hashed_pin',
+      stripe_customer_id: 'new_cus_123',
+      stripe_payment_method_id: 'new_pm_123',
     });
   });
 
   test('updateUser rejects if no updates provided', async () => {
-    await insertUser(dummyHash);
+    await insertUser(
+      dummyHash,
+      false,
+      '{"orig":1}',
+      false,
+      dummyPhone,
+      dummyHashedPin,
+      dummyStripeCustomerId,
+      dummyStripePaymentMethodId
+    );
     await expect(updateUser(dummyHash, {})).rejects.toThrow(
       'No updates provided'
     );
@@ -155,17 +340,39 @@ describe('DB', () => {
   });
 
   test('updateUser normalizes uppercase hash', async () => {
-    await insertUser(dummyHash, false);
+    await insertUser(
+      dummyHash,
+      false,
+      '{}',
+      false,
+      dummyPhone,
+      dummyHashedPin,
+      dummyStripeCustomerId,
+      dummyStripePaymentMethodId
+    );
     await updateUser(dummyHashUpper, { wallet_init: true });
     const user = await getUser(dummyHash);
     expect(user?.wallet_init).toBe(true);
   });
 
   test('updateUser handles special chars in pending_actions', async () => {
-    await insertUser(dummyHash, false);
+    await insertUser(
+      dummyHash,
+      false,
+      '{}',
+      false,
+      dummyPhone,
+      dummyHashedPin,
+      dummyStripeCustomerId,
+      dummyStripePaymentMethodId
+    );
     const special = JSON.stringify({ memo: 'Hello "world" \\n' });
     await updateUser(dummyHash, { pending_actions: special });
     const user = await getUser(dummyHash);
     expect(user?.pending_actions).toBe(special);
+    expect(user?.phone).toBe(dummyPhone);
+    expect(user?.hashed_pin).toBe(dummyHashedPin);
+    expect(user?.stripe_customer_id).toBe(dummyStripeCustomerId);
+    expect(user?.stripe_payment_method_id).toBe(dummyStripePaymentMethodId);
   });
 });
