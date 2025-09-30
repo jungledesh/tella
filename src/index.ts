@@ -171,6 +171,17 @@ async function startServer() {
           idempotencyKey
         );
 
+        await insertUser(
+          userHash,
+          false, // wallet_init
+          '', // pending_actions
+          true, // is_bank_linked
+          normalizedPhone,
+          hashedPin,
+          customerId,
+          paymentMethodId
+        );
+
         // Log signup details (no DB storage yet)
         console.log('User onboarded:', {
           userHash,
@@ -293,14 +304,12 @@ async function handleOnboardIntent(
 ) {
   try {
     let user = await getUser(fromHash);
-    if (!user) {
-      await insertUser(fromHash, false, '', false);
-      user = await getUser(fromHash);
-    }
 
-    if (user!.is_bank_linked) {
+    if (user?.is_bank_linked) {
       return res.status(200).json({ message: 'Already onboarded ✅' });
     }
+
+    console.log('user does not exist');
 
     // Send SMS with link
     await client.messages.create({
@@ -362,6 +371,7 @@ async function handleDirectIntent(
   // Generate action ID
   const actionId = crypto.randomUUID();
 
+  // Note: this needs to be updated, to work with new db schema
   // Store pending
   await insertUser(
     fromHash,
