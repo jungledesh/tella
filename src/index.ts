@@ -182,15 +182,6 @@ async function startServer() {
           paymentMethodId
         );
 
-        // Log signup details (no DB storage yet)
-        console.log('User onboarded:', {
-          userHash,
-          phone: normalizedPhone,
-          paymentMethodId,
-          customerId,
-          timestamp: new Date().toISOString(),
-        });
-
         // Send welcome SMS
         await client.messages.create({
           body: `${WELCOME_MSG}\nSet your pin, and link bank at www.olsms.xyz`,
