@@ -104,11 +104,11 @@ sequenceDiagram
 
 ## Security 
 
-+ Signer Gating: All on-chain calls signed by Tella's keypair; hardcoded pubkey checks in program.
-+ Hashing: User IDs as SHA-256/HMAC for privacy; no plaintext storage.
-+ Confirmation: Explicit user PIN via calls to prevent spoofing.
-+ Compliance: Fiat ramps via Plaid/Stripe; launch paused for KYC/regulatory alignment.
-+ Error Handling: Graceful failures (e.g., insufficient funds) with user notifications.
++ **Signer Gating**: All on-chain calls signed by Tella's keypair; hardcoded pubkey checks in program.
++ **Hashing**: User IDs as SHA-256/HMAC for privacy; no plaintext storage.
++ **Confirmation**: Explicit user PIN via calls to prevent spoofing.
++ **Compliance**: Fiat ramps via Plaid/Stripe; launch paused for KYC/regulatory alignment.
++ **Error Handling**: Graceful failures (e.g., insufficient funds) with user notifications.
 
 ## Architecture
 
